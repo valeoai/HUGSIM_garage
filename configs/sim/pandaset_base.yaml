@@ -8,4 +8,6 @@ gtrs_path: ${oc.env:HUGSIM_AD_GTRS}
 ztrs_path: ${oc.env:HUGSIM_AD_ZTRS}
 gtrs_aug_path: ${oc.env:HUGSIM_AD_GTRS_AUG}
 pictura_path: ${oc.env:HUGSIM_AD_PICTURA}
+# This agent drives from the abstract scene export rather than the Gaussian render.
+pictura_scene_export: true
 output_dir: ${oc.env:HUGSIM_OUT}/pandaset_

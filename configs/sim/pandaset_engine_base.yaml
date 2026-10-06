@@ -1,0 +1,11 @@
+realcar_path: /home/yyin5/mack/datasets_mack_raw/HUGSIM-public/3DRealCar
+model_base: /home/yyin5/mack/datasets_mack_raw/HUGSIM-public/ss/scenes/pandaset
+uniad_path: /home/yyin5/workspace/UniAD_SIM/tools/e2e.sh
+vad_path: /home/yyin5/workspace/VAD_SIM/tools/e2e.sh
+ltf_path: /home/yyin5/workspace/NAVSIM/ltf_e2e.sh
+dynamo_path: /home/yyin5/workspace/NAVSIM/dynamo_e2e.sh
+gtrs_path: /home/yyin5/workspace/NAVSIM/gtrs_e2e.sh
+ztrs_path: /home/yyin5/workspace/NAVSIM/ztrs_e2e.sh
+gtrs_aug_path: /home/yyin5/workspace/NAVSIM/gtrs_aug_e2e.sh
+pictura_path: /home/yyin5/workspace/Pictura-dev/hugsim_e2e.sh
+output_dir: /home/yyin5/mack/yyin5/HUGSIM/outputs/benchmark_drivor_mpc/pandaset_engine_
