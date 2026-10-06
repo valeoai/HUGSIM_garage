@@ -20,6 +20,8 @@ from moviepy import ImageSequenceClip
 # Time spacing of the waypoints the AD side returns. The tracker needs it to place the plan on a
 # timeline, and the scorer needs it to differentiate the plan into speeds/accelerations.
 PLAN_TIMESTEP = 0.5
+#: Longest episode, in simulated seconds. 400 steps at the shipped dt = 0.25 s.
+EPISODE_SECONDS = 100.0
 
 def to_video(observations, output_path):
     frames = []
@@ -119,7 +121,11 @@ def create_gym_env(cfg, output):
                 action = {'acc': acc, 'steer_rate': steer_rate}
             obs, reward, terminated, truncated, info = env.step(action)
             cnt += 1
-            done = terminated or truncated or cnt > 400
+            # The cap is a duration, not a step count: at the shipped dt = 0.25 s, 400 steps
+            # was 100 s, and a step-count cap silently shortens the episode when dt changes
+            # (at dt = 0.1 s the same 400 steps is 40 s, so a route needing 60 s can never be
+            # completed and route completion measures the cap rather than the agent).
+            done = terminated or truncated or cnt * cfg.kinematic.dt > EPISODE_SECONDS
 
             # Episode-level bookkeeping: 'rc' is the progress reached by executing this plan,
             # so it stays post-step (the scorer only takes its maximum over the episode).
