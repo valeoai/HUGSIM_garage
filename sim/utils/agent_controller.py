@@ -222,6 +222,10 @@ class AttackPlanner:
 
         self.exec_traj = None
         self.exec_pointer = 1
+        #: The dt the live plan was generated on. Its rows sit at k * plan_dt seconds, so
+        #: executing one row per call is only correct while the simulator runs at that same dt.
+        self.plan_dt = None
+        self.exec_t = 0.0
 
     def update(
             self, state, unified_map, dt,
@@ -238,15 +242,29 @@ class AttackPlanner:
         '''
         assert self.exec_pointer > 0
 
-        # directly execute the current plan
+        # Directly execute the current plan, advancing by elapsed time rather than by one row
+        # per call. The rows sit at k * plan_dt seconds (gen_trajectories is given a horizon of
+        # predict_steps * dt), so a pointer step assumes the simulator runs at the dt that
+        # planned it; at any other dt every adversarial actor's speed scales by plan_dt / dt.
+        # When the two agree this takes the same row as before, exactly.
         if not new_plan:
-            if self.exec_traj is not None and \
-                    self.exec_pointer < self.exec_traj.shape[0]:
-                next_state = self.exec_traj[self.exec_pointer]
-                self.exec_pointer += 1
-                return next_state
-            else:
-                new_plan = True
+            if self.exec_traj is not None:
+                self.exec_t += dt
+                k = self.exec_t / (self.plan_dt or dt)
+                lo = int(k)
+                if lo < self.exec_traj.shape[0]:
+                    frac = k - lo
+                    if frac < 1e-9 or lo + 1 >= self.exec_traj.shape[0]:
+                        next_state = self.exec_traj[lo]
+                    else:
+                        a0, a1 = self.exec_traj[lo], self.exec_traj[lo + 1]
+                        d = a1.clone()
+                        d[2] = a0[2] + (torch.remainder(a1[2] - a0[2] + math.pi, 2 * math.pi) - math.pi) * frac
+                        d[[0, 1, 3]] = a0[[0, 1, 3]] + (a1[[0, 1, 3]] - a0[[0, 1, 3]]) * frac
+                        next_state = d
+                    self.exec_pointer = lo + 1
+                    return next_state
+            new_plan = True
 
         assert attacked_states.shape[0] == self.predict_steps
 
@@ -291,6 +309,8 @@ class AttackPlanner:
         # produce next state
         self.exec_traj = traj_best
         self.exec_traj[:, 2] -= np.pi / 2
+        self.plan_dt = dt            # the grid this plan's rows sit on
+        self.exec_t = dt             # the row returned just below
         self.exec_pointer = 1
         next_state = self.exec_traj[self.exec_pointer]
         # next_state[0] = -next_state[0]

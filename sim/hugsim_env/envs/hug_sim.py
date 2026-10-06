@@ -468,6 +468,11 @@ class HUGSimEnv(gymnasium.Env):
             'accelerate': self.last_accel,
             'steer_rate': self.last_steer_rate,
             'timestamp': self.timestamp,
+            # The simulator step. An AD side integrating its own dynamics needs it on the
+            # first step too, where there is no previous timestamp to difference, and must
+            # not assume the shipped 0.25 s: dt is configurable and a wrong first step
+            # displaces the ego before the episode has begun.
+            'dt': self.dt,
             'command': command,
             'ego_box': self.ego_box,
             'obj_boxes': self.objs_list,
