@@ -227,10 +227,32 @@ class AttackPlanner:
         self.plan_dt = None
         self.exec_t = 0.0
 
+    def _sample(self, t):
+        """The planned pose t seconds after the plan was made, or None past its end.
+
+        Rows sit at k * plan_dt seconds, so this is what decouples the actor's speed from the
+        simulator step. At t == plan_dt it returns row 1 exactly, which is what both call sites
+        did before, so a simulator running at the attacker's own clock is unchanged.
+        """
+        k = t / (self.plan_dt or t)
+        lo = int(k)
+        if lo >= self.exec_traj.shape[0]:
+            return None
+        frac = k - lo
+        if frac < 1e-9 or lo + 1 >= self.exec_traj.shape[0]:
+            out = self.exec_traj[lo]
+        else:
+            a0, a1 = self.exec_traj[lo], self.exec_traj[lo + 1]
+            out = a1.clone()
+            out[2] = a0[2] + (torch.remainder(a1[2] - a0[2] + math.pi, 2 * math.pi) - math.pi) * frac
+            out[[0, 1, 3]] = a0[[0, 1, 3]] + (a1[[0, 1, 3]] - a0[[0, 1, 3]]) * frac
+        self.exec_pointer = lo + 1
+        return out
+
     def update(
             self, state, unified_map, dt,
             neighbors, attacked_states,
-            new_plan=True
+            new_plan=True, sim_dt=None
     ):
         '''
         Args:
@@ -247,22 +269,16 @@ class AttackPlanner:
         # predict_steps * dt), so a pointer step assumes the simulator runs at the dt that
         # planned it; at any other dt every adversarial actor's speed scales by plan_dt / dt.
         # When the two agree this takes the same row as before, exactly.
+        # dt is the resolution the plan is generated at; sim_dt is how much time actually passes
+        # per call. They differ whenever the simulator does not run at the attacker's own clock, and
+        # advancing by dt there moved the actor at sim_dt / dt of its intended speed (0.4x at the
+        # shipped 0.25 s step). Default to dt so a caller that passes neither is unchanged.
+        step = dt if sim_dt is None else sim_dt
         if not new_plan:
             if self.exec_traj is not None:
-                self.exec_t += dt
-                k = self.exec_t / (self.plan_dt or dt)
-                lo = int(k)
-                if lo < self.exec_traj.shape[0]:
-                    frac = k - lo
-                    if frac < 1e-9 or lo + 1 >= self.exec_traj.shape[0]:
-                        next_state = self.exec_traj[lo]
-                    else:
-                        a0, a1 = self.exec_traj[lo], self.exec_traj[lo + 1]
-                        d = a1.clone()
-                        d[2] = a0[2] + (torch.remainder(a1[2] - a0[2] + math.pi, 2 * math.pi) - math.pi) * frac
-                        d[[0, 1, 3]] = a0[[0, 1, 3]] + (a1[[0, 1, 3]] - a0[[0, 1, 3]]) * frac
-                        next_state = d
-                    self.exec_pointer = lo + 1
+                self.exec_t += step
+                next_state = self._sample(self.exec_t)
+                if next_state is not None:
                     return next_state
             new_plan = True
 
@@ -310,11 +326,14 @@ class AttackPlanner:
         self.exec_traj = traj_best
         self.exec_traj[:, 2] -= np.pi / 2
         self.plan_dt = dt            # the grid this plan's rows sit on
-        self.exec_t = dt             # the row returned just below
+        # Advance by the time that actually passes this call, not by one plan row. These agree
+        # when the simulator runs at the attacker's clock; elsewhere a fixed row cost the actor
+        # the same sim_dt / dt speed factor as the follow branch above.
+        self.exec_t = step
         self.exec_pointer = 1
-        next_state = self.exec_traj[self.exec_pointer]
-        # next_state[0] = -next_state[0]
-        self.exec_pointer += 1
+        next_state = self._sample(self.exec_t)
+        if next_state is None:
+            next_state = self.exec_traj[-1]
 
         return next_state
 

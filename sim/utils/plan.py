@@ -23,6 +23,18 @@ class planner:
         self.ground = ground
         self.PREDICT_STEPS = 20
         self.NUM_NEIGHBORS = 3
+        #: The grid the AttackPlanner's own candidate trajectories sit on: plan.py has always
+        #: passed it a hardcoded 0.1 s, so its rows and its 2 s horizon live here whatever the
+        #: simulator step is.
+        self.ATTACK_DT = 0.1
+        #: The simulator step this benchmark is published at (configs/sim/kinematic.yaml has
+        #: shipped dt: 0.25 since the initial commit). Scenario difficulty is pinned to what the
+        #: adversary does at THIS step, so that every published HUGSIM number stays reproducible
+        #: and running at another dt no longer makes the Extreme tier easier or harder. Note the
+        #: attacker covers ATTACK_DT of planned trajectory per DT_REF of wall time, i.e. 0.4x its
+        #: nominal speed; that is the shipped behaviour and is deliberately preserved.
+        self.ATTACK_DT_REF = 0.25
+        self._attack_elapsed = {}
         
         self.rectify_angle = 0
         if self.unified_map is not None:
@@ -104,10 +116,36 @@ class planner:
                 next_xyrv = controller.update(state=stat[[0, 1, 3, 4]], path=self.route[iid], dt=self.dt,
                                               neighbors=neighbors)
             elif type(controller) is AttackPlanner:
-                safe_neighbors = neighbors[1:, ...]
-                next_xyrv = controller.update(state=stat[[0, 1, 3, 4]], unified_map=self.unified_map, dt=0.1,
-                                              neighbors=safe_neighbors, attacked_states=future_states[0],
-                                              new_plan=((t // self.dt) % self.ATTACK_FREQ == 0))
+                # The attacker plans on ATTACK_DT, so the victim and neighbour forecasts it is scored
+                # against have to sit on that grid too. future_states uses self.dt, and the cost
+                # compares row i of each: at self.dt = 0.25 the attacker aimed where the ego would be
+                # at 0.25 i seconds while itself only reaching 0.1 i, i.e. 2.5x too far ahead.
+                # Forecasts the attacker is scored against are built on DT_REF, not self.dt: the
+                # cost compares row i of the victim forecast with row i of the attacker's own
+                # candidates, so letting self.dt set this grid changed how far ahead it aimed.
+                attack_future = constant_headaway(all_stats, num_steps=self.PREDICT_STEPS, dt=self.ATTACK_DT_REF)
+                safe_neighbors = attack_future[neighbor_idx][1:, ...]
+                # Replan on elapsed seconds rather than a step count. ATTACK_FREQ steps was 0.75 s
+                # at DT_REF but 0.3 s at dt 0.1; hold it at the DT_REF period for every step. The
+                # accumulator also avoids the old trigger's float truncation, where t // dt turned
+                # 0.8999999999999999 into 8 and silently skipped a replan.
+                period = self.ATTACK_FREQ * self.ATTACK_DT_REF
+                acc = self._attack_elapsed.get(iid)
+                if acc is None:
+                    acc, replan = 0.0, True          # first call plans, as (t // dt) % FREQ == 0 did at t = 0
+                else:
+                    acc += self.dt
+                    replan = acc + 1e-9 >= period
+                    if replan:
+                        acc -= period
+                self._attack_elapsed[iid] = acc
+                # Planned trajectory consumed per call: ATTACK_DT per DT_REF of wall time, which is
+                # one row per step at the shipped dt and the same ground speed at any other.
+                advance = self.dt * (self.ATTACK_DT / self.ATTACK_DT_REF)
+                next_xyrv = controller.update(state=stat[[0, 1, 3, 4]], unified_map=self.unified_map,
+                                              dt=self.ATTACK_DT, sim_dt=advance,
+                                              neighbors=safe_neighbors, attacked_states=attack_future[0],
+                                              new_plan=replan)
             elif type(controller) is ConstantPlanner:
                 next_xyrv = controller.update(state=stat[[0, 1, 3, 4]], dt=self.dt)
             elif type(controller) is UnicyclePlanner:
