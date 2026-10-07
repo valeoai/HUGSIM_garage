@@ -34,7 +34,7 @@ def to_video(observations, output_path):
     clip.write_videofile(output_path)
 
 
-def create_gym_env(cfg, output):
+def create_gym_env(cfg, output, skip_native_eval=False):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -146,11 +146,18 @@ def create_gym_env(cfg, output):
     with open(os.path.join(output, 'infos.pkl'), 'wb') as wf:
         pickle.dump(infos_save, wf)
     
-    ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
-    scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
-    results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
-    with open(os.path.join(output, 'eval.json'), 'w') as f:
-        json.dump(results, f)
+    # The native scorer reads the two point clouds back and checks every frame against them: it is
+    # ~69 s of the ~525 s an episode costs here, far more than the drive's own tail. A sweep that
+    # scores offline from data.pkl (which this always writes, and which carries the full state) can
+    # skip it; eval.json is then simply absent, and nothing else in the episode depends on it.
+    if skip_native_eval:
+        print('skipping the native scorer (--skip-native-eval); score offline from data.pkl', flush=True)
+    else:
+        ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
+        scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
+        results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
+        with open(os.path.join(output, 'eval.json'), 'w') as f:
+            json.dump(results, f)
 
 
 
@@ -212,6 +219,12 @@ if __name__ == "__main__":
         '--scene_export', default=None, choices=('true', 'false'),
         help="Force the abstract scene export on or off. It is off unless the agent asks for it "
              "with base.<ad>_scene_export: true, since building it is not free.")
+    parser.add_argument(
+        "--skip-native-eval",
+        action="store_true",
+        help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
+             "still written, so the episode can be scored offline",
+    )
     args = parser.parse_args()
 
     scenario_config = OmegaConf.load(args.scenario_path)
@@ -267,7 +280,7 @@ if __name__ == "__main__":
 
     process = launch(ad_path, args.ad_cuda, output)
     try:
-        create_gym_env(cfg, output)
+        create_gym_env(cfg, output, skip_native_eval=args.skip_native_eval)
         check_alive(process)
     except Exception as e:
         import traceback
