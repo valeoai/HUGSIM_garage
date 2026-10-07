@@ -125,7 +125,7 @@ def create_gym_env(cfg, output):
             # was 100 s, and a step-count cap silently shortens the episode when dt changes
             # (at dt = 0.1 s the same 400 steps is 40 s, so a route needing 60 s can never be
             # completed and route completion measures the cap rather than the agent).
-            done = terminated or truncated or cnt * cfg.kinematic.dt > EPISODE_SECONDS
+            done = terminated or truncated or cnt * cfg.kinematic.dt >= EPISODE_SECONDS
 
             # Episode-level bookkeeping: 'rc' is the progress reached by executing this plan,
             # so it stays post-step (the scorer only takes its maximum over the episode).
