@@ -13,7 +13,7 @@ import pytest
 # ``sim`` is a namespace package with no install, so bare ``pytest`` would not find it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sim.scene_export import PoseHistory, box_history_to_ego, boxes_to_cuboids, history_length  # noqa: E402
+from sim.scene_export import PoseHistory, box_history_to_ego, boxes_to_cuboids, history_length, pose_history  # noqa: E402
 from sim.scene_export import entities as ent  # noqa: E402
 
 
@@ -231,3 +231,42 @@ def test_cull_keeps_past_and_rows_align():
     np.testing.assert_allclose(got[:, -1, 0], cub[:, 0])
     np.testing.assert_allclose(got[:, -1, 1], cub[:, 1])
     np.testing.assert_allclose(got[:, -1, 2], np.arctan2(cub[:, 4], cub[:, 3]), atol=1e-6)
+
+
+def test_zero_seconds_turns_the_history_off():
+    assert pose_history(0.25, 0) is None
+    assert pose_history(0.1, 0.0) is None
+    h = pose_history(0.1, 0.5)
+    assert isinstance(h, PoseHistory) and h.length == history_length(0.1, 0.5) == 6
+    assert pose_history(0.25).length == 3
+
+
+@pytest.mark.parametrize("seconds", [-0.5, -1e-9, float("nan"), float("inf")])
+def test_bad_seconds_rejected(seconds):
+    with pytest.raises(ValueError, match="scene_export_history_seconds"):
+        pose_history(0.25, seconds)
+
+
+@pytest.mark.parametrize("length", [0, -1])
+def test_pose_history_rejects_empty_ring(length):
+    # A length of 0 used to slice [:-0] in push, which trims nothing: the ring grew forever.
+    with pytest.raises(ValueError, match="length >= 1"):
+        PoseHistory(length)
+
+
+@pytest.mark.parametrize("boxes", [
+    [_box(50, 0, 0), _box(10, 5, 1), _box(5000, 0, 0), _box(-5, -2, 0.3)],
+    [],
+    [_box(5000, 0, 0)],
+])
+def test_speed_alone_matches_packed_speed(boxes):
+    # With the history off, the env culls the speed column alone instead of [speed | history | valid].
+    speeds = np.array([3.3, 0.1, 7.7, 1.0 / 3.0])[: len(boxes)]
+    packed = np.concatenate([speeds[:, None], np.ones((len(boxes), 12))], axis=1)
+    ego = _ego(0.25)
+    cub_off, carried_off = boxes_to_cuboids(boxes, ego, pitch=0.1, max_entities=2, extra=speeds[:, None])
+    cub_on, carried_on = boxes_to_cuboids(boxes, ego, pitch=0.1, max_entities=2, extra=packed)
+    np.testing.assert_array_equal(cub_off, cub_on)
+    assert carried_off[:, 0].dtype == carried_on[:, 0].dtype == np.float32
+    assert carried_off[:, 0].shape == carried_on[:, 0].shape
+    np.testing.assert_array_equal(carried_off[:, 0], carried_on[:, 0])

@@ -27,7 +27,7 @@ y left, z up, yaw counter-clockwise), a common world convention.
 
 from sim.scene_export.entities import box_history_to_ego, boxes_to_cuboids, rig_pitch_from_track, roads_to_ego, route_to_ego
 from sim.scene_export import sidecar
-from sim.scene_export.history import SCENE_EXPORT_HISTORY_SECONDS, PoseHistory, history_length
+from sim.scene_export.history import SCENE_EXPORT_HISTORY_SECONDS, PoseHistory, history_length, pose_history
 from sim.scene_export.static_agents import VEHICLE_CLASSES, extract_static_vehicles
 from sim.scene_export.map_source import (
     ROAD_CLASS_CROSSWALK,
@@ -55,6 +55,7 @@ __all__ = [
     "boxes_to_cuboids",
     "build_map_source",
     "history_length",
+    "pose_history",
     "rig_pitch_from_track",
     "sidecar",
     "extract_static_vehicles",
