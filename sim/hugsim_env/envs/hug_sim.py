@@ -11,12 +11,13 @@ import os
 import pickle
 from sim.utils.plan import planner, UnifiedMap
 from sim.scene_export import (
-    SCENE_EXPORT_HISTORY_LEN,
+    SCENE_EXPORT_HISTORY_SECONDS,
     PoseHistory,
     box_history_to_ego,
     boxes_to_cuboids,
     build_map_source,
     extract_static_vehicles,
+    history_length,
     rig_pitch_from_track,
     roads_to_ego,
     route_to_ego,
@@ -254,7 +255,9 @@ class HUGSimEnv(gymnasium.Env):
         # An export cap, not the policy's block width; see sim.scene_export.entities.
         self.scene_export_max_agents = int(cfg.base.get('scene_export_max_agents', SCENE_EXPORT_MAX_AGENTS))
         self.scene_export_rig_pitch = 0.0
-        self._scene_export_history = PoseHistory(SCENE_EXPORT_HISTORY_LEN)
+        # Sized from the env's step, so the history spans the same seconds at any dt.
+        history_seconds = float(cfg.base.get('scene_export_history_seconds', SCENE_EXPORT_HISTORY_SECONDS))
+        self._scene_export_history = PoseHistory(history_length(self.dt, history_seconds))
         if self.obs_mode != 'rgb':
             # KITTI-360's world frame is its down-pitched camera's, so a level street climbs
             # ~6 deg in it; the export is rotated back onto the direction of travel.
@@ -598,8 +601,8 @@ class HUGSimEnv(gymnasium.Env):
             self._scene_export_prev_objs = [list(o) for o in actors]
             pitch = self.scene_export_rig_pitch
             # Pose history of every actor, computed BEFORE the cull so an actor that was far
-            # away a moment ago and is near now keeps its past. A repeated call at the same
-            # timestamp replaces the snapshot (PoseHistory.push), it does not add one.
+            # away a moment ago and is near now keeps its past. Rebuilding the info of the same
+            # state replaces the snapshot (PoseHistory.push), it does not add one.
             self._scene_export_history.push(self.timestamp, actors_by_id)
             history, history_valid, snapshot_times = self._scene_export_history.export(
                 list(actors_by_id.keys()), actors, ego_box, pitch=pitch

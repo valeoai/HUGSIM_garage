@@ -239,13 +239,13 @@ def box_history_to_ego(history_boxes, ego_box, pitch=0.0):
 
     Returns:
         ``(M, N, 3)`` float32 ``(x, y, heading)``; ``(x, y)`` match the cuboid centre and
-        ``heading = box_yaw - ego_yaw`` wrapped to ``(-pi, pi]``, so it agrees with
+        ``heading = box_yaw - ego_yaw`` wrapped to ``[-pi, pi]``, so it agrees with
         ``atan2(cuboid[4], cuboid[3])``.
     """
     history_boxes = np.asarray(history_boxes, dtype=np.float64)
     m, n = history_boxes.shape[:2]
     center_xy, _, _, rel_yaw = _boxes_to_ego_pose(history_boxes.reshape(m * n, 7), ego_box, pitch)
-    # arctan2(sin, cos) wraps to (-pi, pi] and is what the cuboid's (cos, sin) decode to.
+    # arctan2(sin, cos) wraps to [-pi, pi] and is what the cuboid's (cos, sin) decode to.
     heading = np.arctan2(np.sin(rel_yaw), np.cos(rel_yaw))
     out = np.concatenate([center_xy, heading[:, None]], axis=1)
     return out.reshape(m, n, 3).astype(np.float32)

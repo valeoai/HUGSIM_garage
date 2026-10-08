@@ -1,19 +1,29 @@
 """Pose-history export: ``box_history_to_ego``, ``PoseHistory`` and the cull alignment.
 
 Numpy only. ``sim.scene_export`` imports cleanly without torch/open3d, so it is imported as
-a package.
+a package. Run from anywhere: ``pytest tests/test_scene_export_history.py``.
 """
+
+import os
+import sys
 
 import numpy as np
 import pytest
 
-from sim.scene_export import PoseHistory, box_history_to_ego, boxes_to_cuboids
-from sim.scene_export import entities as ent
+# ``sim`` is a namespace package with no install, so bare ``pytest`` would not find it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from sim.scene_export import PoseHistory, box_history_to_ego, boxes_to_cuboids, history_length  # noqa: E402
+from sim.scene_export import entities as ent  # noqa: E402
 
 
 def _old_boxes_to_cuboids(obj_boxes, ego_box, front_m=120.0, behind_m=20.0, side_m=30.0, max_entities=64,
                           class_code=1, pitch=0.0, extra=None):
-    """Verbatim copy of the pre-refactor implementation."""
+    """Verbatim copy of the pre-refactor implementation.
+
+    It pins that refactor only: when ``boxes_to_cuboids`` changes on purpose, delete this
+    oracle and ``test_boxes_to_cuboids_unchanged``, do not update them.
+    """
     empty = np.zeros((0, 16), dtype=np.float32)
     if obj_boxes is None or len(obj_boxes) == 0:
         return empty if extra is None else (empty, np.zeros(0, dtype=np.float32))
@@ -103,7 +113,7 @@ def test_extra_2d_and_empty():
 
 @pytest.mark.parametrize("pitch", [0.0, 0.1])
 def test_history_matches_ego_frame_transform(pitch):
-    h = PoseHistory()
+    h = PoseHistory(3)
     for t in TIMES:
         h.push(t, {7: _car(t)})
     ego_now = _ego(TIMES[-1])
@@ -124,7 +134,7 @@ def test_heading_wrapped():
 
 
 def test_actor_appearing_mid_episode():
-    h = PoseHistory()
+    h = PoseHistory(3)
     h.push(0.0, {1: _car(0.0)})
     h.push(0.25, {1: _car(0.25), 2: _car(0.25, x0=60)})
     h.push(0.5, {1: _car(0.5), 2: _car(0.5, x0=60)})
@@ -134,14 +144,14 @@ def test_actor_appearing_mid_episode():
     np.testing.assert_array_equal(valid, [[True, True, True], [False, True, True]])
     # Filler is the current pose; the other actor is unaffected.
     np.testing.assert_array_equal(hist[1, 0], hist[1, 2])
-    solo = PoseHistory()
+    solo = PoseHistory(3)
     for t in TIMES:
         solo.push(t, {1: _car(t)})
     np.testing.assert_array_equal(solo.export([1], [cur[0]], ego)[0][0], hist[0])
 
 
 def test_length_grows_then_saturates_and_times_relative():
-    h = PoseHistory()
+    h = PoseHistory(3)
     for k, t in enumerate([0.0, 0.25, 0.5, 0.75, 1.0]):
         h.push(t, {1: _car(t)})
         hist, valid, times = h.export([1], [_car(t)], _ego(t))
@@ -154,8 +164,33 @@ def test_length_grows_then_saturates_and_times_relative():
     assert len(h.export([1], [_car(0)], _ego(0))[2]) == 1
 
 
+def test_history_length_spans_the_lookback():
+    assert history_length(0.25) == 3
+    assert history_length(0.1) == 6
+    assert history_length(0.2) == 4
+    assert history_length(0.3) == 3
+    for dt in (0.05, 0.1, 0.125, 0.2, 0.25, 0.3, 0.5):
+        n = history_length(dt)
+        assert (n - 1) * dt >= 0.5 - 1e-9 and (n - 2) * dt < 0.5
+
+
+def test_times_exact_at_10hz():
+    # The env's clock is a float sum (t += dt); 0.1 drifts by an ulp within a few steps.
+    h = PoseHistory(history_length(0.1))
+    t = 0.0
+    for k in range(40):
+        h.push(t, {1: _car(t)})
+        times = h.export([1], [_car(t)], _ego(t))[2]
+        assert times[-1] == 0.0
+        if k >= 2:
+            assert times[-3] == -0.2 and times[0] <= -0.2
+        if k >= 5:
+            np.testing.assert_array_equal(times, [-0.5, -0.4, -0.3, -0.2, -0.1, 0.0])
+        t += 0.1
+
+
 def test_duplicate_push_replaces():
-    h = PoseHistory()
+    h = PoseHistory(3)
     h.push(0.0, {1: _car(0.0)})
     h.push(0.25, {1: _car(0.25)})
     h.push(0.25, {1: _car(0.25), 2: _car(0.25)})
@@ -165,7 +200,7 @@ def test_duplicate_push_replaces():
 
 
 def test_empty_export():
-    h = PoseHistory()
+    h = PoseHistory(3)
     h.push(0.0, {})
     hist, valid, times = h.export([], np.zeros((0, 7)), _ego(0))
     assert hist.shape == (0, 1, 3) and valid.shape == (0, 1) and len(times) == 1
@@ -178,7 +213,7 @@ def test_cull_keeps_past_and_rows_align():
         # 10 approaches from beyond the 120 m cull; 11 is near; 12 is behind 11.
         return {10: _box(150.0 - 80.0 * t, 0.0, np.pi, 0.0), 11: _box(30.0, 5.0, 0.0), 12: _box(15.0, -4.0, 0.2)}
 
-    h = PoseHistory()
+    h = PoseHistory(3)
     for t in TIMES:
         h.push(t, world(t))
     ego = [0.0, 0.0, 0.0, 1.9, 4.5, 1.5, 0.0]
