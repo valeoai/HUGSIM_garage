@@ -16,9 +16,18 @@ exist, so ``N`` grows 1, 2, ... up to that length; a consumer looking back by a 
 the past as missing until ``snapshot_times[0] <= -d + 1e-6``. The times are rounded to the
 microsecond, since the env's clock is a float sum of steps that drifts by an ulp.
 
+The look-back must cover the consumer's longest stride ``d``. The ring reaches back
+``(history_length(dt, seconds) - 1) * dt``, at least ``seconds`` (0.6 s for 0.5 s at dt = 0.3 s).
+A longer stride fails silently: ``snapshot_times[0]`` never reaches ``-d``, so the consumer never
+gets a past view. Such a consumer needs a larger ``base.scene_export_history_seconds``, and can
+check it: once the episode has lasted ``d``, ``snapshot_times[0] > -d + 1e-6`` means the look-back
+is too short.
+
 ``base.scene_export_history_seconds: 0`` turns the history off (``pose_history`` returns None):
 a policy that reads only the present then pays nothing for it, and the three keys are left out
-of ``info['pictura']``, whose other keys are unchanged. A negative or non-finite value is an error.
+of ``info['pictura']``, whose other keys are unchanged. Anything but a finite number >= 0 is an
+error, ``None`` and booleans included (0, not ``false``, is the off value); a numeric string
+counts as its number.
 """
 
 import numpy as np
@@ -42,12 +51,24 @@ def history_length(dt, seconds=SCENE_EXPORT_HISTORY_SECONDS):
 def pose_history(dt, seconds=SCENE_EXPORT_HISTORY_SECONDS):
     """The env's ring for a look-back of ``seconds``, or None when ``seconds`` is 0 (history off).
 
-    Checked here, at env construction, because a negative look-back would otherwise size a ring
-    that never trims and grows for the whole episode.
+    Checked here so that a bad value fails naming the config key: a small negative look-back
+    (above ``-dt``) would otherwise give ``history_length`` 1 (only now, no error), and a larger
+    one a length ``PoseHistory`` refuses. A bool is refused too: 0, not False, is the off value. A
+    numeric string passes, as a quoted YAML value or a resolver such as ``oc.env`` gives one (a
+    plain ``${...}`` interpolation keeps the type).
     """
-    seconds = float(seconds)
+    bad = ValueError(
+        "base.scene_export_history_seconds must be a finite number >= 0 (0 turns the history off), "
+        f"got {seconds!r}"
+    )
+    if isinstance(seconds, bool):
+        raise bad
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        raise bad from None
     if not (np.isfinite(seconds) and seconds >= 0):
-        raise ValueError(f"base.scene_export_history_seconds must be a finite number >= 0 (0 turns the history off), got {seconds}")
+        raise bad
     if seconds == 0:
         return None
     return PoseHistory(history_length(dt, seconds))

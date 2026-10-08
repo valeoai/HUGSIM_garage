@@ -1,4 +1,5 @@
-"""Pose-history export: ``box_history_to_ego``, ``PoseHistory`` and the cull alignment.
+"""Pose-history export: ``box_history_to_ego``, ``PoseHistory``, ``history_length``, ``pose_history``
+(and its 0 s off switch) and the cull alignment.
 
 Numpy only. ``sim.scene_export`` imports cleanly without torch/open3d, so it is imported as
 a package. Run from anywhere: ``pytest tests/test_scene_export_history.py``.
@@ -241,15 +242,21 @@ def test_zero_seconds_turns_the_history_off():
     assert pose_history(0.25).length == 3
 
 
-@pytest.mark.parametrize("seconds", [-0.5, -1e-9, float("nan"), float("inf")])
+@pytest.mark.parametrize("seconds", [-0.5, -1e-9, float("nan"), float("inf"), None, True, False, "off"])
 def test_bad_seconds_rejected(seconds):
     with pytest.raises(ValueError, match="scene_export_history_seconds"):
         pose_history(0.25, seconds)
 
 
+def test_numeric_seconds_accepted():
+    assert pose_history(0.25, "0") is None
+    assert pose_history(0.25, "0.5").length == 3
+
+
 @pytest.mark.parametrize("length", [0, -1])
 def test_pose_history_rejects_empty_ring(length):
-    # A length of 0 used to slice [:-0] in push, which trims nothing: the ring grew forever.
+    # A length of 0 would slice [:-0] in push, which trims nothing: the ring would grow forever.
+    # A negative one would empty the ring on every push.
     with pytest.raises(ValueError, match="length >= 1"):
         PoseHistory(length)
 
@@ -260,7 +267,8 @@ def test_pose_history_rejects_empty_ring(length):
     [_box(5000, 0, 0)],
 ])
 def test_speed_alone_matches_packed_speed(boxes):
-    # With the history off, the env culls the speed column alone instead of [speed | history | valid].
+    # With the history off, the env culls the speed column alone instead of [speed | history | valid];
+    # either way the speeds must be those of base's 1-D extra call (the frozen oracle), bit for bit.
     speeds = np.array([3.3, 0.1, 7.7, 1.0 / 3.0])[: len(boxes)]
     packed = np.concatenate([speeds[:, None], np.ones((len(boxes), 12))], axis=1)
     ego = _ego(0.25)
@@ -270,3 +278,6 @@ def test_speed_alone_matches_packed_speed(boxes):
     assert carried_off[:, 0].dtype == carried_on[:, 0].dtype == np.float32
     assert carried_off[:, 0].shape == carried_on[:, 0].shape
     np.testing.assert_array_equal(carried_off[:, 0], carried_on[:, 0])
+    carried_base = _old_boxes_to_cuboids(boxes, ego, pitch=0.1, max_entities=2, extra=speeds)[1]
+    assert carried_base.dtype == carried_off.dtype and carried_base.shape == carried_off[:, 0].shape
+    np.testing.assert_array_equal(carried_off[:, 0], carried_base)

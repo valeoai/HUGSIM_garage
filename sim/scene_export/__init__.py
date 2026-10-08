@@ -18,8 +18,9 @@ Two pieces live here:
   otherwise omitted, even though the ego can already collide with them.
 * :mod:`sim.scene_export.sidecar` caches both of those beside the scene. Neither the road nor the
   parked cars move, so they are derived once per scene rather than once per episode.
-* :mod:`sim.scene_export.history` keeps the last few snapshots of every actor's box, and
-  exports them in the current ego frame for a temporal policy.
+* :mod:`sim.scene_export.history` keeps the last few snapshots of every actor's box, looking back
+  ``base.scene_export_history_seconds`` (0 turns it off), and exports them in the current ego frame
+  for a temporal policy.
 
 Everything is expressed in the frame ``ego_box`` / ``obj_boxes`` already use (x forward,
 y left, z up, yaw counter-clockwise), a common world convention.
