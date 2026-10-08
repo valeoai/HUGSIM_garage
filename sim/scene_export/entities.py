@@ -210,6 +210,53 @@ def roads_to_ego(
     return clipped.astype(np.float32)
 
 
+def _boxes_to_ego_pose(boxes, ego_box, pitch=0.0):
+    """Ego-frame pose of an ``(M, 7)`` array of ``[x, y, z, w, l, h, yaw]`` boxes.
+
+    The one transform behind both the cuboid export and the pose history, so the two cannot
+    drift apart: sim-frame centre -> ego frame, centre z measured off the ego's ground datum,
+    then the rig-pitch correction of x (which uses the centre z).
+
+    Returns:
+        ``(center_xy, center_z, half_h, rel_yaw)``: ``(M, 2)`` leveled ego-frame centre,
+        ``(M,)`` centre z, ``(M,)`` half height, and ``(M,)`` ``box_yaw - ego_yaw`` (unwrapped).
+    """
+    ego_xy, cos_h, sin_h, ego_z = _ego_transform(ego_box)
+    center_xy = _world_to_ego_xy(boxes[:, 0:2], ego_xy, cos_h, sin_h)
+    half_h = 0.5 * np.maximum(boxes[:, 5], 0.1)
+    center_xy[:, 0], center_z = _level(center_xy[:, 0], boxes[:, 2] + half_h - ego_z, pitch)
+    return center_xy, center_z, half_h, boxes[:, 6] - float(ego_box[6])
+
+
+def box_history_to_ego(history_boxes, ego_box, pitch=0.0):
+    """Express a box history in the current ego frame.
+
+    Args:
+        history_boxes: ``(M, N, 7)`` ``[x, y, z, w, l, h, yaw]``, sim frame, one row per
+            actor and one column per snapshot.
+        ego_box: the CURRENT ego box (the frame every snapshot is expressed in).
+        pitch: the rig's mount pitch, as for :func:`boxes_to_cuboids`.
+
+    Returns:
+        ``(M, N, 3)`` float32 ``(x, y, heading)``; ``(x, y)`` match the cuboid centre and
+        ``heading = box_yaw - ego_yaw`` wrapped to ``(-pi, pi]``, so it agrees with
+        ``atan2(cuboid[4], cuboid[3])``.
+    """
+    history_boxes = np.asarray(history_boxes, dtype=np.float64)
+    m, n = history_boxes.shape[:2]
+    center_xy, _, _, rel_yaw = _boxes_to_ego_pose(history_boxes.reshape(m * n, 7), ego_box, pitch)
+    # arctan2(sin, cos) wraps to (-pi, pi] and is what the cuboid's (cos, sin) decode to.
+    heading = np.arctan2(np.sin(rel_yaw), np.cos(rel_yaw))
+    out = np.concatenate([center_xy, heading[:, None]], axis=1)
+    return out.reshape(m, n, 3).astype(np.float32)
+
+
+def _empty_extra(extra):
+    """Zero-row stand-in for ``extra`` (1-D stays ``(0,)``; a 2-D block keeps its width)."""
+    width = np.shape(extra)[1:] if np.ndim(extra) > 1 else ()
+    return np.zeros((0,) + tuple(width), dtype=np.float32)
+
+
 def boxes_to_cuboids(
     obj_boxes,
     ego_box,
@@ -232,7 +279,8 @@ def boxes_to_cuboids(
         class_code: face palette selector. HUGSIM's actors are all 3DRealCar vehicles, so
             this is ``CLASS_VEHICLE`` unless a scenario grows other actor types.
         pitch: the rig's mount pitch, undone before the cull (:func:`rig_pitch_from_track`).
-        extra: optional per-box values (e.g. speeds) carried through the same cull and sort.
+        extra: optional per-box values (e.g. speeds, or a 2-D ``(M, C)`` block of per-box
+            rows) carried through the same cull and sort; indexed on the first axis.
 
     Returns:
         ``(K, 16)`` float32, ``K <= max_entities``, nearest first; with ``extra``, a pair
@@ -240,16 +288,11 @@ def boxes_to_cuboids(
     """
     empty = np.zeros((0, 16), dtype=np.float32)
     if obj_boxes is None or len(obj_boxes) == 0:
-        return empty if extra is None else (empty, np.zeros(0, dtype=np.float32))
+        return empty if extra is None else (empty, _empty_extra(extra))
 
     boxes = np.asarray(obj_boxes, dtype=np.float64)
-    ego_xy, cos_h, sin_h, ego_z = _ego_transform(ego_box)
-    ego_yaw = float(ego_box[6])
-
-    center_xy = _world_to_ego_xy(boxes[:, 0:2], ego_xy, cos_h, sin_h)
-    width, length, height = boxes[:, 3], boxes[:, 4], boxes[:, 5]
-    half_h = 0.5 * np.maximum(height, 0.1)
-    center_xy[:, 0], center_z = _level(center_xy[:, 0], boxes[:, 2] + half_h - ego_z, pitch)
+    center_xy, center_z, half_h, all_rel_yaw = _boxes_to_ego_pose(boxes, ego_box, pitch)
+    width, length = boxes[:, 3], boxes[:, 4]
 
     visible = (
         (center_xy[:, 0] >= -behind_m)
@@ -257,10 +300,10 @@ def boxes_to_cuboids(
         & (np.abs(center_xy[:, 1]) <= side_m)
     )
     if not np.any(visible):
-        return empty if extra is None else (empty, np.zeros(0, dtype=np.float32))
+        return empty if extra is None else (empty, _empty_extra(extra))
 
     center_xy = center_xy[visible]
-    rel_yaw = boxes[visible, 6] - ego_yaw
+    rel_yaw = all_rel_yaw[visible]
     rel_cos, rel_sin = np.cos(rel_yaw), np.sin(rel_yaw)
 
     cuboids = np.zeros((center_xy.shape[0], 16), dtype=np.float64)
