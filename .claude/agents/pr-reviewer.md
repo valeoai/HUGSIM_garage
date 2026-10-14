@@ -46,12 +46,22 @@ status), an interface for plugging in agents, and `sim/scene_export/`. `git -C <
   `obs_pipe`, the AD answers on `plan_pipe` with a plan (or a dict carrying `plan` plus its own
   `pose_delta`/`acc`/`velo`/`steer`), and the sim sends `'Done'` at the end. The AD sides live in other
   repos (UniAD_SIM, VAD_SIM, NAVSIM, Pictura-dev): `info`'s keys and the plan format are their API.
-- An episode folder holds `data.pkl` (every frame, enough to score offline), `infos.pkl`, `video.mp4`,
-  `eval.json` (absent with `--skip-native-eval`), `ground.ply`, `scene.ply`, `output.txt` (the AD's log).
+  Every step's `info['obs_mode']` names the observation mode (`rgb`, `vector` or `raster`); in `vector`
+  and `raster`, `obs` is `{}` and `info['scene_export']` holds `roads`, `cuboids`, `cuboid_speed` and
+  `route` in the ego frame of `ego_box` (x forward, y left, z up, z = 0 on the road), and in `raster`
+  `info['raster']` is the `{view, rig}` the agent is asked to draw. An agent refuses a mode by answering
+  `None`, then reading `'Done'`; one that exits instead leaves the sim blocked on a FIFO.
+- An episode folder, `<dataset>_<agent>/<scene>_<difficulty>`, holds `data.pkl` (every frame, enough to
+  score offline), `infos.pkl`, `video.mp4`, `eval.json` (absent with `--skip-native-eval`), `ground.ply`,
+  `scene.ply`, `output.txt` (the AD's log). `closed_loop.py` removes an earlier run's `eval.json` and
+  `video.mp4` from it just before launching the agent, and refuses a launcher that is not a file.
   `get_score.py` aggregates `eval.json`s; `run_dataset.sh` skips a scenario whose `eval.json` exists.
-- `configs/sim/` has one `<dataset>_<variant>.yaml` per dataset (nuscenes, kitti360, pandaset, waymo) and
-  variant (`base`, `private`, `engine`, `reactive`, `drivor`, `vec_{ext,noext}_{ilqr,jerk,reactive}`, ...),
-  plus `kinematic.yaml` (dt 0.25 s, the published operating point) and `kinematic_10hz.yaml` (dt 0.1 s).
+- `configs/sim/` has `<dataset>_base.yaml` and `<dataset>_private.yaml` per dataset (nuscenes, kitti360,
+  pandaset, waymo), plus `kinematic.yaml` (dt 0.25 s, the published operating point) and
+  `kinematic_10hz.yaml` (dt 0.1 s). There are no per-variant configs: a variant (another mode, dt or
+  checkpoint) runs under an agent name of its own, its launcher from `HUGSIM_AD_<NAME>` and its flags from
+  `HUGSIM_ARGS`, which `run_dataset.sh` and `run_single.sh` append to every `closed_loop.py` call;
+  `run_dataset.sh` refuses `--ad`, `--base_path`, `--scenario_path` and `--output_dir` there.
 - Drive_gym (valeoai/Drive_gym) vendors this repo byte for byte as `third_party/HUGSIM`
   (`third_party/HUGSIM.VENDORED_FROM` names the commit) and imports its pieces directly, not the gym env:
   `sim.utils.score_calculator` (`hugsim_evaluate`, `bg_collision_det`, `boundaries`, `create_rectangle`,
@@ -84,8 +94,13 @@ status), an interface for plugging in agents, and `sim/scene_export/`. `git -C <
 - **Configs hold no absolute paths.** Every root is `${oc.env:VAR}`. A new variable goes in `ENV_VARS` in
   `closed_loop.py` and in the README's Environment table, and `check_env` requires only what a run reads.
   An agent is added with `--ad_path` or `HUGSIM_AD_<NAME>`, with no config file and no `closed_loop.py`
-  change; a key added to one base config usually belongs in every dataset's and variant's.
-- **The scene export is opt-in** (`base.<ad>_scene_export`, `--scene_export`): building it is not free.
+  change; a key added to one base config usually belongs in every dataset's base and private config.
+- **What an agent is handed is a declared mode** (`base.<ad>_obs_mode` / `--obs_mode`, `rgb` by default):
+  the scene export is built only in `vector` and `raster`, which render no camera per step (`video.mp4`
+  is rendered for its own sake, as `--video` says). The mode and the raster request are checked before the
+  agent is launched (`resolve_raster`), and the env checks them first thing in `__init__`. A variant's
+  agent name reads none of the base agent's `base.<agent>_*` keys, and a `dynamo*` name always takes
+  `base.dynamo_path`.
 - **The scene data is read-only** (on vai it is another user's tree). Episodes are written under
   `HUGSIM_OUT` / `--output_dir`, never next to the scenes.
 - **Fixes meant for upstream stay upstreamable**: minimal, no dependency on fork-only code, and recorded in
@@ -124,10 +139,11 @@ Review the PR through your lens only; other reviewers cover the other lenses. Le
   the right section; an upstream-bound fix that still applies to `upstream/main`; the scene data never
   written to; third-party code not edited.
 - **integration**: every caller and callee of what changed, across the repo and beyond it. The FIFO
-  protocol and `info`'s keys that the AD sides read; the launcher's arguments; the episode folder's files
-  that `get_score.py`, `run_dataset.sh`'s resume and offline scorers read; every `configs/sim/` variant a
-  new key must reach, and `kinematic_10hz.yaml`; the gym registration; `sim/` as the installed
-  `hugsim-env` package (new modules must be importable from it); `run_*.sh`; and the Drive_gym imports
+  protocol and `info`'s keys that the AD sides read (`obs_mode`, `raster`, `scene_export` included); the
+  launcher's arguments; the episode folder's files that `get_score.py`, `run_dataset.sh`'s resume and
+  offline scorers read; every dataset's base and private config a new key must reach, and
+  `kinematic_10hz.yaml`; the gym registration; `sim/` as the installed `hugsim-env` package (new modules
+  must be importable from it); `run_*.sh`, `HUGSIM_ARGS` and `run_dataset.sh`'s guard; and the Drive_gym imports
   listed above (signatures, return shapes, semantics), plus its `plan_score.py` parity when the scorer
   changes.
 - **design**: duplication of helpers that already exist (search for them), dead code, needless complexity
@@ -147,7 +163,7 @@ Review the PR through your lens only; other reviewers cover the other lenses. Le
   PR promises (title, body, linked issues in `context.md`, commit messages) with what the diff does. Look
   for each promised item that is missing or half done; `TODO`, `FIXME`, stubs, `NotImplementedError` and
   `pass` placeholders the PR adds; flags, options and config keys added but not wired through (argparse,
-  every `configs/sim/` variant, `run_*.sh`, `ENV_VARS`); behaviour changed with no README update (the
+  every dataset's base and private config, `run_*.sh`, `ENV_VARS`); behaviour changed with no README update (the
   fork-changes table, Agents, Environment); an upstream PR the body promises but does not link; findings
   from `prior.md` still open, skipped or PLAUSIBLE. Also list the runs that only a cluster can do and that the
   PR needs before merge (a closed-loop episode at dt 0.25 and, if timing changed, at dt 0.1; a before/after
