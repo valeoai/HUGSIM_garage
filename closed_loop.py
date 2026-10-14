@@ -1,11 +1,12 @@
 import sys
 import os
 import re
+import shutil
 sys.path.append(os.getcwd())
 
 import gymnasium
 import hugsim_env
-from hugsim_env.envs.hug_sim import OBS_MODES, RASTER_RIGS, RASTER_VIEWS
+from hugsim_env.envs.hug_sim import OBS_MODES, RASTER_RIGS, RASTER_VIEWS, resolve_raster
 from argparse import ArgumentParser
 from sim.utils.sim_utils import traj2control, traj_transform_to_global
 import pickle
@@ -286,14 +287,20 @@ if __name__ == "__main__":
     # quietly run that agent on the Gaussian render.
     if f'{args.ad}_scene_export' in cfg.base:
         raise SystemExit(
-            f"base.{args.ad}_scene_export is gone: set base.{args.ad}_obs_mode to vector or raster "
-            "(or pass --obs_mode), and read the export from info['scene_export']")
+            f"base.{args.ad}_scene_export is gone: delete it. If the agent read the export, also set "
+            f"base.{args.ad}_obs_mode to vector or raster (or pass --obs_mode) and read it from "
+            "info['scene_export']")
     cfg.base.obs_mode = args.obs_mode or cfg.base.get(f'{args.ad}_obs_mode', 'rgb')
     if cfg.base.obs_mode not in OBS_MODES:
         # Checked before the agent is launched, which the env's own check would come after.
         raise SystemExit(f"base.{args.ad}_obs_mode is {cfg.base.obs_mode!r}; expected one of {OBS_MODES}")
     if cfg.base.obs_mode == 'raster':
-        raster = OmegaConf.to_container(cfg.base.get(f'{args.ad}_raster') or OmegaConf.create({}))
+        try:
+            # Checked before the agent is launched, as the mode is. argparse holds the flags to
+            # their choices, so only what was written in the config, under that key, is checked.
+            raster = resolve_raster(cfg.base.get(f'{args.ad}_raster'), where=f"base.{args.ad}_raster")
+        except ValueError as e:
+            raise SystemExit(str(e))
         if args.raster_view is not None:
             raster['view'] = args.raster_view
         if args.raster_rig is not None:
@@ -313,18 +320,28 @@ if __name__ == "__main__":
 
     # base.<ad>_path by convention, or --ad_path. 'dynamo*' variants share one launcher.
     if args.ad_path is not None:
-        ad_path = args.ad_path
+        ad_path, source = args.ad_path, '--ad_path'
     else:
         env_var = f"HUGSIM_AD_{args.ad.upper()}"
         if ad_key in cfg.base:
-            ad_path = cfg.base[ad_key]
+            ad_path, source = cfg.base[ad_key], f'base.{ad_key}'
         elif env_var in os.environ:
-            ad_path = os.environ[env_var]          # an agent the shipped config does not list
+            ad_path, source = os.environ[env_var], env_var    # an agent the shipped config does not list
         else:
             raise SystemExit(
                 f"no launcher for --ad {args.ad}: pass --ad_path, export {env_var}, or add "
                 f"base.{ad_key}. Listed: {sorted(k for k in cfg.base if k.endswith('_path'))}")
+    # bash reads the launcher from that file, relative to the cwd, or for a bare name from PATH.
+    # Given anything else it exits at once, and the episode waits on obs_pipe for no one.
+    if not ad_path or not (os.path.isfile(ad_path)
+                           or '/' not in ad_path and shutil.which(ad_path, mode=os.F_OK)):
+        raise SystemExit(f"the launcher for --ad {args.ad} is {ad_path!r}, from {source}: not a file")
 
+    # An earlier run's, in the reused episode folder, which this one may not rewrite: eval.json when
+    # it is refused or passes --skip-native-eval, video.mp4 with --video off.
+    for name in ('eval.json', 'video.mp4'):
+        if os.path.exists(os.path.join(output, name)):
+            os.remove(os.path.join(output, name))
     process = launch(ad_path, args.ad_cuda, output)
     try:
         create_gym_env(cfg, output, skip_native_eval=args.skip_native_eval, video=video)

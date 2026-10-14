@@ -48,10 +48,33 @@ SCENE_EXPORT_KERB_CLASSES = (1, 9)
 OBS_MODES = ('rgb', 'vector', 'raster')
 # 'pv': perspective, one image per camera. 'bev': top-down, around the ego.
 RASTER_VIEWS = ('pv', 'bev')
-# 'agent': the agent's own rig, the one it was trained on. 'hugsim': the scenario's cameras,
-# info['cam_params'], so the raster lines up pixel for pixel with what the rgb mode would render.
+# 'agent': the agent's own rig, the one it was trained on. 'hugsim': the scenario's cameras, as
+# render_cameras places them; info['cam_params'] alone does not place them against
+# info['scene_export'] (README.md, Observation modes).
 RASTER_RIGS = ('agent', 'hugsim')
 RASTER_DEFAULTS = {'view': 'pv', 'rig': 'agent'}
+
+def resolve_raster(requested, where='base.raster'):
+    """The raster request `requested`, a mapping or None, with RASTER_DEFAULTS filled in.
+
+    Raises ValueError naming `where`, the key the request came from, for a request that is not a
+    mapping, a view or rig not in RASTER_VIEWS / RASTER_RIGS, or a key RASTER_DEFAULTS does not
+    have.
+    """
+    if requested is None:
+        requested = {}
+    elif OmegaConf.is_config(requested):
+        requested = OmegaConf.to_container(requested, resolve=True)
+    if not isinstance(requested, dict):
+        raise ValueError(f"{where} must be a mapping with keys {sorted(RASTER_DEFAULTS)}; got {requested!r}")
+    raster = dict(RASTER_DEFAULTS, **requested)
+    for key, allowed in (('view', RASTER_VIEWS), ('rig', RASTER_RIGS)):
+        if raster[key] not in allowed:
+            raise ValueError(f"{where}.{key} is {raster[key]!r}; expected one of {allowed}")
+    unknown = set(raster) - set(RASTER_DEFAULTS)
+    if unknown:
+        raise ValueError(f"{where} has unknown keys {sorted(unknown)}; it takes {sorted(RASTER_DEFAULTS)}")
+    return raster
 
 def fg_collision_det(ego_box, objs):
     ego_x, ego_y, _, ego_w, ego_l, ego_h, ego_yaw = ego_box
@@ -77,6 +100,13 @@ class HUGSimEnv(gymnasium.Env):
     def __init__(self, cfg, output):
         super().__init__()
         
+        self.obs_mode = str(cfg.base.get('obs_mode', 'rgb'))
+        if self.obs_mode not in OBS_MODES:
+            raise ValueError(f"base.obs_mode is {self.obs_mode!r}; expected one of {OBS_MODES}")
+        self.raster = None
+        if self.obs_mode == 'raster':
+            self.raster = resolve_raster(cfg.base.get('raster'))
+
         plan_list = cfg.scenario.plan_list
         for control_param in plan_list:
             control_param[5] = os.path.join(cfg.base.realcar_path, control_param[5])
@@ -140,22 +170,6 @@ class HUGSimEnv(gymnasium.Env):
         self.whl = np.array([1.6, 1.5, 3.0])
         self.ego_verts *= self.whl
         self.data_type = cfg.data_type
-
-        self.obs_mode = str(cfg.base.get('obs_mode', 'rgb'))
-        if self.obs_mode not in OBS_MODES:
-            raise ValueError(f"base.obs_mode is {self.obs_mode!r}; expected one of {OBS_MODES}")
-        self.raster = None
-        if self.obs_mode == 'raster':
-            requested = cfg.base.get('raster') or {}
-            if OmegaConf.is_config(requested):
-                requested = OmegaConf.to_container(requested)
-            self.raster = dict(RASTER_DEFAULTS, **requested)
-            for key, allowed in (('view', RASTER_VIEWS), ('rig', RASTER_RIGS)):
-                if self.raster[key] not in allowed:
-                    raise ValueError(f"base.raster.{key} is {self.raster[key]!r}; expected one of {allowed}")
-            unknown = set(self.raster) - set(RASTER_DEFAULTS)
-            if unknown:
-                raise ValueError(f"base.raster has unknown keys {sorted(unknown)}; it takes {sorted(RASTER_DEFAULTS)}")
 
         self.action_space = spaces.Dict(
             {
@@ -474,7 +488,8 @@ class HUGSimEnv(gymnasium.Env):
 
         Returns:
             ``{'rgb': {cam: (H, W, 3) uint8}, 'semantic': {cam: (H, W) uint8},
-            'depth': {cam: (H, W) float32}}``.
+            'depth': {cam: (H, W) float32}}``. On waymo and kitti360 the BACK cameras come back
+            as zeros, in all three.
         """
         rgbs, semantics, depths = {}, {}, {}
         v2front = self.cam_params['CAM_FRONT']["v2c"]
@@ -551,7 +566,7 @@ class HUGSimEnv(gymnasium.Env):
             # already covered by bg_collision_det, so adding them there would double-count.
             actors = list(self.objs_list)
             # Speeds of the scenario's actors, from their motion since the last step (the planner
-            # does not expose them), for a vector-mode agent.
+            # does not expose them), for the agent, in both abstract modes.
             # Actors are listed in a stable order, so rows match while the count does; a step
             # where an actor appears or leaves reports zero. Parked cars stand still.
             speeds = np.zeros(len(actors))
