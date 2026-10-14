@@ -11,6 +11,9 @@ import os
 import pickle
 from sim.utils.plan import planner, UnifiedMap
 from sim.scene_export import (
+    SCENE_EXPORT_HISTORY_LEN,
+    PoseHistory,
+    box_history_to_ego,
     boxes_to_cuboids,
     build_map_source,
     extract_static_vehicles,
@@ -188,6 +191,7 @@ class HUGSimEnv(gymnasium.Env):
         # An export cap, not the policy's block width; see sim.scene_export.entities.
         self.scene_export_max_agents = int(cfg.base.get('scene_export_max_agents', SCENE_EXPORT_MAX_AGENTS))
         self.scene_export_rig_pitch = 0.0
+        self._scene_export_history = PoseHistory(SCENE_EXPORT_HISTORY_LEN)
         if cfg.base.get('scene_export_obs', False):
             # KITTI-360's world frame is its down-pitched camera's, so a level street climbs
             # ~6 deg in it; the export is rotated back onto the direction of travel.
@@ -417,13 +421,17 @@ class HUGSimEnv(gymnasium.Env):
 
     @property
     def objs_list(self):
-        obj_boxes = []
+        return list(self._objs_by_id().values())
+
+    def _objs_by_id(self):
+        """``{obj_id: [x, y, z, w, l, h, yaw]}`` of the dynamic actors, in the planner's stable order."""
+        obj_boxes = {}
         objs = self.render_kwargs['planning'][0]
         for obj_id, obj_b2w in objs.items():
             yaw = SCR.from_matrix(obj_b2w[:3, :3].detach().cpu().numpy()).as_euler('YXZ')[0]
             # X, Y, Z in IMU, w, l, h
             wlh = self.planner.wlhs[obj_id]
-            obj_boxes.append([obj_b2w[2, 3].item(), -obj_b2w[0, 3].item(), -obj_b2w[1, 3].item(), wlh[0], wlh[1], wlh[2], -yaw-0.5*np.pi])
+            obj_boxes[obj_id] = [obj_b2w[2, 3].item(), -obj_b2w[0, 3].item(), -obj_b2w[1, 3].item(), wlh[0], wlh[1], wlh[2], -yaw-0.5*np.pi]
         return obj_boxes
 
     def _get_obs(self):
@@ -494,7 +502,8 @@ class HUGSimEnv(gymnasium.Env):
             # cull rather than each getting their own budget. Merged only here: objs_list
             # feeds fg_collision_det and the episode record, and the static vehicles are
             # already covered by bg_collision_det, so adding them there would double-count.
-            actors = list(self.objs_list)
+            actors_by_id = self._objs_by_id()
+            actors = list(actors_by_id.values())
             # Speeds of the scenario's actors, from their motion since the last step (the planner
             # does not expose them). A vectorized policy reads them; the rendered one does not.
             # Actors are listed in a stable order, so rows match while the count does; a step
@@ -504,23 +513,47 @@ class HUGSimEnv(gymnasium.Env):
             if prev is not None and len(prev) == len(actors) and len(actors) and self.dt > 0:
                 speeds = np.linalg.norm(np.asarray(actors)[:, :2] - np.asarray(prev)[:, :2], axis=1) / self.dt
             self._scene_export_prev_objs = [list(o) for o in actors]
-            if len(self.scene_export_static_agents):
-                actors.extend(self.scene_export_static_agents.tolist())
-                speeds = np.concatenate([speeds, np.zeros(len(self.scene_export_static_agents))])
             pitch = self.scene_export_rig_pitch
-            cuboids, cuboid_speed = boxes_to_cuboids(
-                actors, ego_box, max_entities=self.scene_export_max_agents, pitch=pitch, extra=speeds
+            # Pose history of every actor, computed BEFORE the cull so an actor that was far
+            # away a moment ago and is near now keeps its past. A repeated call at the same
+            # timestamp replaces the snapshot (PoseHistory.push), it does not add one.
+            self._scene_export_history.push(self.timestamp, actors_by_id)
+            history, history_valid, snapshot_times = self._scene_export_history.export(
+                list(actors_by_id.keys()), actors, ego_box, pitch=pitch
             )
+            n_snap = len(snapshot_times)
+            if len(self.scene_export_static_agents):
+                static = self.scene_export_static_agents
+                actors.extend(static.tolist())
+                speeds = np.concatenate([speeds, np.zeros(len(static))])
+                # Parked cars never move: constant pose, valid at every snapshot.
+                static_hist = box_history_to_ego(np.repeat(static[:, None, :], n_snap, axis=1), ego_box, pitch=pitch)
+                history = np.concatenate([history, static_hist], axis=0)
+                history_valid = np.concatenate([history_valid, np.ones((len(static), n_snap), dtype=bool)], axis=0)
+            # One 2-D extra [speed | history N*3 | valid N] so all of it shares the cull and sort.
+            extra = np.concatenate(
+                [speeds[:, None], history.reshape(len(actors), n_snap * 3), history_valid.astype(np.float64)], axis=1
+            )
+            cuboids, carried = boxes_to_cuboids(
+                actors, ego_box, max_entities=self.scene_export_max_agents, pitch=pitch, extra=extra
+            )
+            cuboid_speed = carried[:, 0]
+            cuboid_history = carried[:, 1 : 1 + n_snap * 3].reshape(-1, n_snap, 3)
+            cuboid_history_valid = carried[:, 1 + n_snap * 3 :] > 0.5
             info['pictura'] = {
                 'roads': roads_to_ego(self.scene_export_map, ego_box, pitch=pitch),
                 'cuboids': cuboids,
                 'cuboid_speed': cuboid_speed,
+                'cuboid_history': cuboid_history,
+                'cuboid_history_valid': cuboid_history_valid,
+                'snapshot_times': snapshot_times,
                 'route': route_to_ego(self.scene_export_track, ego_box, pitch=pitch),
             }
         return info
     
     def reset(self, seed=None, options=None):
         self._scene_export_prev_objs = None
+        self._scene_export_history.reset()
         self.vr = deepcopy(self.start_vr)
         self.vab = deepcopy(self.start_vab)
         self.velo = deepcopy(self.start_velo)

@@ -16,6 +16,8 @@ Two pieces live here:
 * :mod:`sim.scene_export.static_agents` recovers the vehicles baked into the static Gaussian
   model -- every parked car -- which the Gaussian render shows and the abstract export
   otherwise omitted, even though the ego can already collide with them.
+* :mod:`sim.scene_export.history` keeps the last few snapshots of every actor's box, and
+  exports them in the current ego frame for a temporal policy.
 * :mod:`sim.scene_export.sidecar` caches both of those beside the scene. Neither the road nor the
   parked cars move, so they are derived once per scene rather than once per episode.
 
@@ -23,8 +25,9 @@ Everything is expressed in the frame ``ego_box`` / ``obj_boxes`` already use (x 
 y left, z up, yaw counter-clockwise), a common world convention.
 """
 
-from sim.scene_export.entities import boxes_to_cuboids, rig_pitch_from_track, roads_to_ego, route_to_ego
+from sim.scene_export.entities import box_history_to_ego, boxes_to_cuboids, rig_pitch_from_track, roads_to_ego, route_to_ego
 from sim.scene_export import sidecar
+from sim.scene_export.history import SCENE_EXPORT_HISTORY_LEN, PoseHistory
 from sim.scene_export.static_agents import VEHICLE_CLASSES, extract_static_vehicles
 from sim.scene_export.map_source import (
     ROAD_CLASS_CROSSWALK,
@@ -38,6 +41,7 @@ from sim.scene_export.map_source import (
 )
 
 __all__ = [
+    "SCENE_EXPORT_HISTORY_LEN",
     "VEHICLE_CLASSES",
     "ROAD_CLASS_CROSSWALK",
     "ROAD_CLASS_EDGE",
@@ -45,7 +49,9 @@ __all__ = [
     "ROAD_CLASS_LINE",
     "ROAD_CLASS_SPEED_BUMP",
     "GroundTrajectoryMapSource",
+    "PoseHistory",
     "TrajdataMapSource",
+    "box_history_to_ego",
     "boxes_to_cuboids",
     "build_map_source",
     "rig_pitch_from_track",
