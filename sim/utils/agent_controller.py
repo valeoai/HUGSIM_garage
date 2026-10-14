@@ -166,7 +166,11 @@ class IDM:
             lookahead_lengths = torch.cumsum(torch.norm(
                 lookahead_path[1:, :2] - lookahead_path[:-1, :2], dim=1
             ), dim=0)
-            lookahead_lengths = torch.cat([lookahead_lengths, lookahead_lengths[-1:]])
+            if lookahead_lengths.numel() == 0:
+                # a one-point lookahead (nearest point second to last) has no segment: its lead is 0 m ahead
+                lookahead_lengths = lookahead_path.new_zeros(1)
+            else:
+                lookahead_lengths = torch.cat([lookahead_lengths, lookahead_lengths[-1:]])
             lead_distance = lookahead_lengths[indices_lead]
 
             # compute lead speed
