@@ -170,9 +170,9 @@ HUGSIM_AD_PICTURA_10HZ=/path/to/Pictura-dev/hugsim_e2e.sh HUGSIM_ARGS="--obs_mod
 ```
 
 `run_dataset.sh` refuses `--output_dir`, `--ad`, `--base_path` and `--scenario_path` in
-`HUGSIM_ARGS`: they choose the episode folder, and its skip, on `eval.json`, looks only in the
-one it built. `--skip-native-eval` writes no `eval.json`, so that skip never sees a finished
-scene: run one worker then, not a forward and reverse pair. Calling `closed_loop.py` directly,
+`HUGSIM_ARGS`, and any abbreviation of them: they would send the episode somewhere other than the
+folder `run_dataset.sh` checks for `eval.json`. `--skip-native-eval` writes no `eval.json`, so
+that check never sees a finished scene: run one worker then, not a forward and reverse pair. Calling `closed_loop.py` directly,
 `--ad pictura_vector --ad_path ...` and `--output_dir` both work.
 
 ## Environment

@@ -334,11 +334,11 @@ if __name__ == "__main__":
     # bash reads the launcher from that file, relative to the cwd, or for a bare name from PATH.
     # Given anything else it exits at once, and the episode waits on obs_pipe for no one.
     if not ad_path or not (os.path.isfile(ad_path)
-                           or '/' not in ad_path and shutil.which(ad_path, mode=os.F_OK)):
+                           or ('/' not in ad_path and shutil.which(ad_path, mode=os.F_OK))):
         raise SystemExit(f"the launcher for --ad {args.ad} is {ad_path!r}, from {source}: not a file")
 
-    # An earlier run's, in the reused episode folder, which this one may not rewrite: eval.json when
-    # it is refused or passes --skip-native-eval, video.mp4 with --video off.
+    # Files an earlier run left in the reused episode folder that this run may not rewrite:
+    # eval.json when it is refused or passes --skip-native-eval, video.mp4 with --video off.
     for name in ('eval.json', 'video.mp4'):
         if os.path.exists(os.path.join(output, name)):
             os.remove(os.path.join(output, name))

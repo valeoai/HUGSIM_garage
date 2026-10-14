@@ -9,7 +9,10 @@ usage() {
     echo "  scenario_order: forward (default) or reverse -- run two workers from opposite"
     echo "                  ends of the list; finished scenes are skipped via their eval.json."
     echo "  split:          public (default) or private"
-    echo "  HUGSIM_ARGS:    env var, extra closed_loop.py arguments split on whitespace"
+    echo "  HUGSIM_ARGS:    env var, extra closed_loop.py arguments split on whitespace, but not"
+    echo "                  --ad/--base_path/--scenario_path/--output_dir. Flags that change the"
+    echo "                  episode (--obs_mode, --kinematic_path, --raster_*) need an agent name of"
+    echo "                  its own (README.md, Running a variant)."
 }
 
 if [ -z "${1-}" ]; then
@@ -40,12 +43,14 @@ fi
 
 read -r -d '' -a hugsim_args <<< "${HUGSIM_ARGS-}" || true
 # The skip below looks for eval.json in the folder --ad, --base_path, --scenario_path and --output_dir
-# pick, so HUGSIM_ARGS must not set them by any name argparse takes for one, listed as shortest:full.
+# pick, so HUGSIM_ARGS must not set them, nor any abbreviation argparse would take for one. Any prefix
+# of three characters or more is refused: it either names one of them or is ambiguous, whatever
+# other flags closed_loop.py gains or loses.
 for arg in ${hugsim_args[@]+"${hugsim_args[@]}"}; do
     flag=${arg%%=*}
-    for opt in --ad:--ad --b:--base_path --sc:--scenario_path --ou:--output_dir; do
-        if [[ "${flag}" == "${opt%%:*}"* && "${opt#*:}" == "${flag}"* ]]; then
-            echo "Error: HUGSIM_ARGS must not set ${opt#*:} (${arg}): run_dataset.sh picks the episode folder (and its eval.json skip) from its own arguments. Run a variant under an agent name of its own, with HUGSIM_AD_<NAME>=<launcher path> and its flags in HUGSIM_ARGS (README.md, Observation modes)."
+    for opt in --ad --base_path --scenario_path --output_dir; do
+        if [[ "${#flag}" -gt 2 && "${opt}" == "${flag}"* ]]; then
+            echo "Error: HUGSIM_ARGS must not set ${opt} (${arg}): run_dataset.sh picks the episode folder (and its eval.json skip) from its own arguments. Run a variant under an agent name of its own, with HUGSIM_AD_<NAME>=<launcher path> (a dynamo* name: --ad_path in HUGSIM_ARGS) and its flags in HUGSIM_ARGS (README.md, Running a variant)."
             usage; exit 1
         fi
     done

@@ -6,7 +6,9 @@ DEFAULT_SCENARIO=/home/yyin5/mack/datasets_mack_raw/HUGSIM-public/ss/scenarios/k
 if [ -z "${1-}" ]; then
     echo "Usage: $0 <agent_name> [scenario_yaml] [sim_cuda] [ad_cuda]"
     echo "  scenario_yaml defaults to ${DEFAULT_SCENARIO}"
-    echo "  HUGSIM_ARGS (env var): extra closed_loop.py arguments split on whitespace"
+    echo "  HUGSIM_ARGS (env var): extra closed_loop.py arguments split on whitespace. Flags that"
+    echo "  change the episode (--obs_mode, --kinematic_path, --raster_*) need an agent name of its"
+    echo "  own (README.md, Running a variant)"
     exit 1
 fi
 AGENT=${1}

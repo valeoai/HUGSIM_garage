@@ -3,7 +3,7 @@
 Two blocks matter here, and both are plain float arrays:
 
 * roads -- ``(N, 7)`` ``[x0, y0, z0, x1, y1, z1, type_code]``, one 3D segment per row.
-* agent cuboids -- ``(K, 16)`` ``[center xyz, forward xyz, right xyz, up xyz,
+* agent cuboids -- ``(K, 16)`` ``[center xyz, forward xyz, left xyz, up xyz,
   half_length, half_width, half_height, class_code]``.
 
 Both are expressed in the ego frame (x forward, y left, z relative to the ground under the
