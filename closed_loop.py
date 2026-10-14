@@ -5,6 +5,7 @@ sys.path.append(os.getcwd())
 
 import gymnasium
 import hugsim_env
+from hugsim_env.envs.hug_sim import OBS_MODES, RASTER_RIGS, RASTER_VIEWS
 from argparse import ArgumentParser
 from sim.utils.sim_utils import traj2control, traj_transform_to_global
 import pickle
@@ -22,19 +23,30 @@ from moviepy import ImageSequenceClip
 PLAN_TIMESTEP = 0.5
 #: Longest episode, in simulated seconds. 400 steps at the shipped dt = 0.25 s.
 EPISODE_SECONDS = 100.0
+#: Frame rate of a sparse video, in simulated time. The abstract modes render no camera to drive
+#: from, so each video frame is a Gaussian render made for the video alone.
+SPARSE_VIDEO_HZ = 2.0
 
-def to_video(observations, output_path):
+def to_video(observations, output_path, fps):
     frames = []
     for obs in observations:
         row1 = np.concatenate([obs['CAM_FRONT_LEFT'], obs['CAM_FRONT'], obs['CAM_FRONT_RIGHT']], axis=1)
         row2 = np.concatenate([obs['CAM_BACK_RIGHT'], obs['CAM_BACK'], obs['CAM_BACK_LEFT']], axis=1)
         frame = np.concatenate([row1, row2], axis=0)
         frames.append(frame)
-    clip = ImageSequenceClip(frames, fps=4)
+    clip = ImageSequenceClip(frames, fps=fps)
     clip.write_videofile(output_path)
 
 
-def create_gym_env(cfg, output, skip_native_eval=False):
+def video_stride(video, dt):
+    """Steps between two video frames: every step for 'full', SPARSE_VIDEO_HZ for 'sparse'.
+
+    Counted in steps of simulated time, so the video plays in real time whatever dt is.
+    """
+    return 1 if video == 'full' else max(1, round(1.0 / (SPARSE_VIDEO_HZ * dt)))
+
+
+def create_gym_env(cfg, output, skip_native_eval=False, video='full'):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -52,12 +64,18 @@ def create_gym_env(cfg, output, skip_native_eval=False):
         os.mkfifo(plan_pipe)
     print('Ready for simulation')
 
+    stride = video_stride(video, cfg.kinematic.dt)
     obs, info = None, None
     while not done:
 
         if obs is None or info is None:
             obs, info = env.reset()
-        observations_save.append(obs['rgb'])
+        if video != 'off' and cnt % stride == 0:
+            # The rgb mode has just rendered the cameras for the agent; the abstract modes
+            # render nothing per step, so a frame there is rendered for the video alone.
+            observations_save.append(
+                obs['rgb'] if cfg.base.obs_mode == 'rgb' else env.unwrapped.render_cameras()['rgb']
+            )
         infos_save.append(info)
 
         print(
@@ -141,8 +159,9 @@ def create_gym_env(cfg, output, skip_native_eval=False):
 
     with open(os.path.join(output, 'data.pkl'), 'wb') as wf:
         pickle.dump([save_data], wf)
-        
-    to_video(observations_save, os.path.join(output, 'video.mp4'))
+
+    if observations_save:
+        to_video(observations_save, os.path.join(output, 'video.mp4'), fps=1.0 / (stride * cfg.kinematic.dt))
     with open(os.path.join(output, 'infos.pkl'), 'wb') as wf:
         pickle.dump(infos_save, wf)
     
@@ -216,9 +235,23 @@ if __name__ == "__main__":
         help="Overrides base.output_dir. The agent name is still appended, as it is for the "
              "config value, so the episode folder is named the same way either way.")
     parser.add_argument(
-        '--scene_export', default=None, choices=('true', 'false'),
-        help="Force the abstract scene export on or off. It is off unless the agent asks for it "
-             "with base.<ad>_scene_export: true, since building it is not free.")
+        '--obs_mode', default=None, choices=OBS_MODES,
+        help="What the agent is handed: 'rgb', the Gaussian render; 'vector', the scene as "
+             "geometry, to read as is; 'raster', the same geometry, for the agent to draw with its "
+             "own renderer. Overrides base.<ad>_obs_mode; rgb when neither is set.")
+    parser.add_argument(
+        '--raster_view', default=None, choices=RASTER_VIEWS,
+        help="Raster mode: the view the agent is asked to draw, perspective or top-down. "
+             "Overrides base.<ad>_raster.view; pv by default.")
+    parser.add_argument(
+        '--raster_rig', default=None, choices=RASTER_RIGS,
+        help="Raster mode: the rig the agent is asked to draw on, its own or the scenario's "
+             "cameras. Overrides base.<ad>_raster.rig; agent by default.")
+    parser.add_argument(
+        '--video', default=None, choices=('full', 'sparse', 'off'),
+        help=f"video.mp4: every step, {SPARSE_VIDEO_HZ:g} Hz of simulated time, or none. Full by "
+             "default in the rgb mode, where the frames are already rendered; sparse in the "
+             "vector and raster modes, where every frame is a Gaussian render of its own.")
     parser.add_argument(
         "--skip-native-eval",
         action="store_true",
@@ -248,13 +281,27 @@ if __name__ == "__main__":
     check_env(cfg.base, needed)
 
     cfg.base.output_dir = (args.output_dir or cfg.base.output_dir) + args.ad
-    # Some AD sides read an abstract render of the scene rather than the Gaussian one, and need
-    # the map and the boxes exported as geometry. Building it is not free and nothing else reads
-    # it, so an agent opts in with base.<ad>_scene_export: true, or --scene_export overrides.
-    cfg.base.scene_export_obs = (
-        args.scene_export == 'true' if args.scene_export is not None
-        else bool(cfg.base.get(f'{args.ad}_scene_export', False))
-    )
+    # An agent declares its mode next to its launcher, base.<ad>_obs_mode, and --obs_mode
+    # overrides it. The opt-in it replaces is refused rather than ignored: ignored, it would
+    # quietly run that agent on the Gaussian render.
+    if f'{args.ad}_scene_export' in cfg.base:
+        raise SystemExit(
+            f"base.{args.ad}_scene_export is gone: set base.{args.ad}_obs_mode to vector or raster "
+            "(or pass --obs_mode), and read the export from info['scene_export']")
+    cfg.base.obs_mode = args.obs_mode or cfg.base.get(f'{args.ad}_obs_mode', 'rgb')
+    if cfg.base.obs_mode not in OBS_MODES:
+        # Checked before the agent is launched, which the env's own check would come after.
+        raise SystemExit(f"base.{args.ad}_obs_mode is {cfg.base.obs_mode!r}; expected one of {OBS_MODES}")
+    if cfg.base.obs_mode == 'raster':
+        raster = OmegaConf.to_container(cfg.base.get(f'{args.ad}_raster') or OmegaConf.create({}))
+        if args.raster_view is not None:
+            raster['view'] = args.raster_view
+        if args.raster_rig is not None:
+            raster['rig'] = args.raster_rig
+        cfg.base.raster = raster
+    elif args.raster_view is not None or args.raster_rig is not None:
+        raise SystemExit(f"--raster_view / --raster_rig need the raster mode; this run is {cfg.base.obs_mode}")
+    video = args.video or ('full' if cfg.base.obs_mode == 'rgb' else 'sparse')
 
     model_path = os.path.join(cfg.base.model_base, cfg.scenario.scene_name)
     model_config = OmegaConf.load(os.path.join(model_path, 'cfg.yaml'))
@@ -280,7 +327,7 @@ if __name__ == "__main__":
 
     process = launch(ad_path, args.ad_cuda, output)
     try:
-        create_gym_env(cfg, output, skip_native_eval=args.skip_native_eval)
+        create_gym_env(cfg, output, skip_native_eval=args.skip_native_eval, video=video)
         check_alive(process)
     except Exception as e:
         import traceback

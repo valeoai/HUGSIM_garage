@@ -9,4 +9,8 @@ register(
      # simulator faster. The episode length is a duration and closed_loop.py owns it
      # (EPISODE_SECONDS), which cuts at the same step as this wrapper did at the shipped dt.
      max_episode_steps=None,
+     # The vector and raster modes hand the agent the scene in info and render no camera, so
+     # their observation is {} -- and gymnasium's checker refuses an empty Dict space outright,
+     # at make(). Disabled here rather than at each make(), so every caller gets the same env.
+     disable_env_checker=True,
 )

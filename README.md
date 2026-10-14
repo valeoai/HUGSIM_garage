@@ -50,9 +50,10 @@ height; reactive agents gain, because it was also inventing collisions overhead.
 
 * **No absolute paths in the configs.** Every root is an `${oc.env:VAR}` interpolation, so one
   checkout serves any machine. See [Agents](#agents).
-* **`sim/scene_export/`.** An optional export of the scene as geometry (typed road segments,
-  actor cuboids, the route), for policies that drive from their own abstract render rather than
-  the Gaussian one. Off unless an agent asks for it, since building it is not free.
+* **Three observation modes.** Besides the Gaussian render (`rgb`), an agent can be handed the
+  scene as geometry, `sim/scene_export/` (typed road segments, actor cuboids, the route), and
+  asked to read it as it is (`vector`) or to draw it with its own renderer (`raster`). See
+  [Observation modes](#observation-modes).
 
 # Agents
 
@@ -72,8 +73,42 @@ The shipped configs name `uniad`, `vad`, `ltf`, `dynamo`, `gtrs`, `ztrs`, `gtrs_
 `pictura`, each reading its own variable, because these live in unrelated checkouts and share no
 root.
 
-An agent that wants the abstract scene export sets `base.<ad>_scene_export: true`, or passes
-`--scene_export true`.
+## Observation modes
+
+What an agent is handed each step is its mode, `base.<ad>_obs_mode` in the config, or
+`--obs_mode`:
+
+| mode | `obs` | what the agent does |
+|---|---|---|
+| `rgb` (default) | each camera's Gaussian render: `rgb`, `semantic`, `depth` | drives from the images, as UniAD, VAD and NAVSIM do |
+| `vector` | `{}` | reads `info['scene_export']` as it is |
+| `raster` | `{}` | draws `info['scene_export']` with its own renderer, as `info['raster']` asks, and drives from that |
+
+`vector` and `raster` hand over the same geometry: road segments, the actors (the scenario's and
+the reconstruction's parked cars) as cuboids with their speeds, and the route. All of it is in
+the ego frame, with z = 0 on the road. The mode is a contract, not a different export. Every
+step's `info['obs_mode']` names it, so an agent built for one mode can refuse the other instead
+of driving from an input it was never trained on.
+
+A raster request has a view and a rig, in `base.<ad>_raster` or on the command line:
+
+| key | flag | values |
+|---|---|---|
+| `view` | `--raster_view` | `pv` (default): perspective, one image per camera; `bev`: top-down around the ego |
+| `rig` | `--raster_rig` | `agent` (default): the rig the agent was trained on; `hugsim`: the scenario's cameras, `info['cam_params']` |
+
+The agent does the drawing, so it decides what it can honour, and refuses the rest at its first
+step. Pictura's driver, for instance, draws `pv` on its own rig.
+
+Neither abstract mode renders the cameras each step. Before the modes, an agent on the export
+still had all six cameras rendered and piped to it every step, and it never read them. The
+Gaussian model is still loaded: it gives the point clouds the collision checks and the scorer
+use, and the export is derived from it once per scene and cached (`sim/scene_export/sidecar.py`).
+`video.mp4` is then rendered only for the video, and `--video` sets how often: `full` (every
+step, the default in `rgb`, where the frames already exist), `sparse` (2 Hz of simulated time,
+the default in the abstract modes) or `off`. Scoring reads none of it.
+
+The shipped configs run `pictura` in `raster`. Run a vector checkpoint with `--obs_mode vector`.
 
 ## Environment
 
