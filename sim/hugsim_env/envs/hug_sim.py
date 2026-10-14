@@ -38,6 +38,44 @@ SCENE_EXPORT_ROAD_CLASSES = (0,)
 SCENE_EXPORT_MAX_AGENTS = 64
 SCENE_EXPORT_KERB_CLASSES = (1, 9)
 
+# What the AD side is handed each step. 'rgb' is the Gaussian render: the cameras' RGB, semantic
+# and depth images, what every image-based agent drives from. 'vector' and 'raster' hand over the
+# scene as geometry instead (sim.scene_export, in info['scene_export']) and render no camera:
+# 'vector' asks the agent to read that geometry as it is, 'raster' to draw it first, with its own
+# renderer, in the view RASTER_VIEWS and on the rig RASTER_RIGS name. The geometry is the same in
+# both; the mode is the contract, so an agent built for one can refuse the other instead of
+# driving from an input it was not trained on.
+OBS_MODES = ('rgb', 'vector', 'raster')
+# 'pv': perspective, one image per camera. 'bev': top-down, around the ego.
+RASTER_VIEWS = ('pv', 'bev')
+# 'agent': the agent's own rig, the one it was trained on. 'hugsim': the scenario's cameras, as
+# render_cameras places them; info['cam_params'] alone does not place them against
+# info['scene_export'] (README.md, Observation modes).
+RASTER_RIGS = ('agent', 'hugsim')
+RASTER_DEFAULTS = {'view': 'pv', 'rig': 'agent'}
+
+def resolve_raster(requested, where='base.raster'):
+    """The raster request `requested`, a mapping or None, with RASTER_DEFAULTS filled in.
+
+    Raises ValueError naming `where`, the key the request came from, for a request that is not a
+    mapping, a view or rig not in RASTER_VIEWS / RASTER_RIGS, or a key RASTER_DEFAULTS does not
+    have.
+    """
+    if requested is None:
+        requested = {}
+    elif OmegaConf.is_config(requested):
+        requested = OmegaConf.to_container(requested, resolve=True)
+    if not isinstance(requested, dict):
+        raise ValueError(f"{where} must be a mapping with keys {sorted(RASTER_DEFAULTS)}; got {requested!r}")
+    raster = dict(RASTER_DEFAULTS, **requested)
+    for key, allowed in (('view', RASTER_VIEWS), ('rig', RASTER_RIGS)):
+        if raster[key] not in allowed:
+            raise ValueError(f"{where}.{key} is {raster[key]!r}; expected one of {allowed}")
+    unknown = set(raster) - set(RASTER_DEFAULTS)
+    if unknown:
+        raise ValueError(f"{where} has unknown keys {sorted(unknown)}; it takes {sorted(RASTER_DEFAULTS)}")
+    return raster
+
 def fg_collision_det(ego_box, objs):
     ego_x, ego_y, _, ego_w, ego_l, ego_h, ego_yaw = ego_box
     ego_poly = create_rectangle(ego_x, ego_y, ego_w, ego_l, ego_yaw)
@@ -62,6 +100,13 @@ class HUGSimEnv(gymnasium.Env):
     def __init__(self, cfg, output):
         super().__init__()
         
+        self.obs_mode = str(cfg.base.get('obs_mode', 'rgb'))
+        if self.obs_mode not in OBS_MODES:
+            raise ValueError(f"base.obs_mode is {self.obs_mode!r}; expected one of {OBS_MODES}")
+        self.raster = None
+        if self.obs_mode == 'raster':
+            self.raster = resolve_raster(cfg.base.get('raster'))
+
         plan_list = cfg.scenario.plan_list
         for control_param in plan_list:
             control_param[5] = os.path.join(cfg.base.realcar_path, control_param[5])
@@ -132,7 +177,8 @@ class HUGSimEnv(gymnasium.Env):
                 "acc": spaces.Box(self.kinematic['min_acc'], self.kinematic['max_acc'], dtype=float)
             }
         )
-        self.observation_space = spaces.Dict(
+        # An abstract mode renders no camera, so its observation is empty and the agent reads info.
+        self.observation_space = spaces.Dict({}) if self.obs_mode != 'rgb' else spaces.Dict(
             {
                 'rgb': spaces.Dict({
                     cam_name: spaces.Box(
@@ -179,16 +225,16 @@ class HUGSimEnv(gymnasium.Env):
         mask = ((semantic_idx > 1) & (semantic_idx != 10))[:, 0] & (opacities > 0.8)
         self.points = gaussians.get_xyz[mask]
 
-        # A policy may read an abstract render of the scene rather than the Gaussian one, so the
-        # map has to be exported as geometry. Built here, at the end of construction, because
-        # it renders the scene to find the road and so needs the cameras and render_kwargs.
-        # Off by default -- every other AD side ignores it and it is not free to build.
+        # The vector and raster modes hand the agent the scene as geometry rather than the
+        # Gaussian render, so the map has to be exported. Built here, at the end of construction,
+        # because it renders the scene to find the road and so needs the cameras and
+        # render_kwargs. Not built in the rgb mode: no image agent reads it, and it is not free.
         self.scene_export_map = None
         self.scene_export_static_agents = np.zeros((0, 7))
         # An export cap, not the policy's block width; see sim.scene_export.entities.
         self.scene_export_max_agents = int(cfg.base.get('scene_export_max_agents', SCENE_EXPORT_MAX_AGENTS))
         self.scene_export_rig_pitch = 0.0
-        if cfg.base.get('scene_export_obs', False):
+        if self.obs_mode != 'rgb':
             # KITTI-360's world frame is its down-pitched camera's, so a level street climbs
             # ~6 deg in it; the export is rotated back onto the direction of travel.
             self.scene_export_rig_pitch = rig_pitch_from_track(cam_poses)
@@ -427,9 +473,28 @@ class HUGSimEnv(gymnasium.Env):
         return obj_boxes
 
     def _get_obs(self):
+        if self.obs_mode != 'rgb':
+            return {}
+        return self.render_cameras()
+
+    def render_cameras(self, cam_names=None):
+        """The Gaussian render of the cameras at the current pose: RGB, semantic and depth.
+
+        The rgb mode's observation. The abstract modes do not render per step, so this is also
+        what a caller uses to get frames there -- the episode video, an alignment capture.
+
+        Args:
+            cam_names: the cameras to render, all of them by default.
+
+        Returns:
+            ``{'rgb': {cam: (H, W, 3) uint8}, 'semantic': {cam: (H, W) uint8},
+            'depth': {cam: (H, W) float32}}``. On waymo and kitti360 the BACK cameras come back
+            as zeros, in all three.
+        """
         rgbs, semantics, depths = {}, {}, {}
         v2front = self.cam_params['CAM_FRONT']["v2c"]
-        for cam_name, params in self.cam_params.items():
+        for cam_name in (self.cam_params if cam_names is None else cam_names):
+            params = self.cam_params[cam_name]
             intrinsic, v2c = params['intrinsic'], params['v2c']
             c2front = v2front @ np.linalg.inv(v2c) @ self.cam_rect
             c2w = self.ego @ c2front
@@ -478,7 +543,12 @@ class HUGSimEnv(gymnasium.Env):
             'obj_boxes': self.objs_list,
             'cam_params': self.cam_params,
             # 'ego_verts': verts,
+            # What the observation is and what the agent is asked to do with it; see OBS_MODES.
+            # Sent every step, so an agent can check it before it reads anything else.
+            'obs_mode': self.obs_mode,
         }
+        if self.raster is not None:
+            info['raster'] = dict(self.raster)
         if self.scene_export_map is not None:
             # Culled and transformed here rather than on the AD side: the map lives in this
             # process, and shipping the whole scene down the pipe every step would cost more
@@ -496,7 +566,7 @@ class HUGSimEnv(gymnasium.Env):
             # already covered by bg_collision_det, so adding them there would double-count.
             actors = list(self.objs_list)
             # Speeds of the scenario's actors, from their motion since the last step (the planner
-            # does not expose them). A vectorized policy reads them; the rendered one does not.
+            # does not expose them), for the agent, in both abstract modes.
             # Actors are listed in a stable order, so rows match while the count does; a step
             # where an actor appears or leaves reports zero. Parked cars stand still.
             speeds = np.zeros(len(actors))
@@ -511,7 +581,7 @@ class HUGSimEnv(gymnasium.Env):
             cuboids, cuboid_speed = boxes_to_cuboids(
                 actors, ego_box, max_entities=self.scene_export_max_agents, pitch=pitch, extra=speeds
             )
-            info['pictura'] = {
+            info['scene_export'] = {
                 'roads': roads_to_ego(self.scene_export_map, ego_box, pitch=pitch),
                 'cuboids': cuboids,
                 'cuboid_speed': cuboid_speed,

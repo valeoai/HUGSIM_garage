@@ -50,9 +50,14 @@ height; reactive agents gain, because it was also inventing collisions overhead.
 
 * **No absolute paths in the configs.** Every root is an `${oc.env:VAR}` interpolation, so one
   checkout serves any machine. See [Agents](#agents).
-* **`sim/scene_export/`.** An optional export of the scene as geometry (typed road segments,
-  actor cuboids, the route), for policies that drive from their own abstract render rather than
-  the Gaussian one. Off unless an agent asks for it, since building it is not free.
+* **Three observation modes.** Besides the Gaussian render (`rgb`), an agent can be handed the
+  scene as geometry, `sim/scene_export/` (typed road segments, actor cuboids, the route), and
+  asked to read it as it is (`vector`) or to draw it with its own renderer (`raster`). See
+  [Observation modes](#observation-modes).
+* **Extra flags from the sweep scripts.** `run_dataset.sh` and `run_single.sh` append
+  `HUGSIM_ARGS`, split on whitespace, to every `closed_loop.py` call. `run_dataset.sh` refuses
+  `--output_dir`, `--ad`, `--base_path` and `--scenario_path` there, since they pick the episode
+  folder its `eval.json` skip reads. See [Running a variant](#running-a-variant).
 
 # Agents
 
@@ -68,12 +73,107 @@ python closed_loop.py --scenario_path ... --base_path ./configs/sim/nuscenes_bas
 `--ad_path` wins; otherwise `base.<ad>_path` from the config; otherwise the environment variable
 `HUGSIM_AD_<NAME>`. **Adding an agent needs no config file and no change to `closed_loop.py`.**
 
+`closed_loop.py` refuses a launcher that is not a file before launching it, and just before
+launching removes an earlier run's `eval.json` and `video.mp4` from the episode folder, so
+neither outlives a run that does not write it (an agent's refusal or `--skip-native-eval` writes
+no `eval.json`, `--video off` no `video.mp4`).
+
 The shipped configs name `uniad`, `vad`, `ltf`, `dynamo`, `gtrs`, `ztrs`, `gtrs_aug` and
 `pictura`, each reading its own variable, because these live in unrelated checkouts and share no
 root.
 
-An agent that wants the abstract scene export sets `base.<ad>_scene_export: true`, or passes
-`--scene_export true`.
+## Observation modes
+
+What an agent is handed each step is its mode, `base.<ad>_obs_mode` in the config, or
+`--obs_mode`:
+
+| mode | `obs` | what the agent does |
+|---|---|---|
+| `rgb` (default) | each camera's Gaussian render: `rgb`, `semantic`, `depth` | drives from the images, as UniAD, VAD and NAVSIM do |
+| `vector` | `{}` | reads `info['scene_export']` as it is |
+| `raster` | `{}` | draws `info['scene_export']` with its own renderer, as `info['raster']` asks, and drives from that |
+
+`vector` and `raster` hand over the same geometry, `info['scene_export']`: `roads` (road
+segments), `cuboids` (the actors, the scenario's and the reconstruction's parked cars),
+`cuboid_speed` (their speeds) and `route`, laid out as in `sim/scene_export/entities.py`. All
+of it is in the ego frame of `ego_box`: x forward, y left, z up with z = 0 on the road, yaw
+counter-clockwise. The plan the agent sends back stays `(right, forward)`, as in `rgb`. The
+mode is a contract, not a different export. Every step's `info['obs_mode']` names it, so an
+agent built for one mode can refuse the other instead of driving from an input it was never
+trained on.
+
+A raster request has a view and a rig, in `base.<ad>_raster` or on the command line:
+
+| key | flag | values |
+|---|---|---|
+| `view` | `--raster_view` | `pv` (default): perspective, one image per camera; `bev`: top-down around the ego |
+| `rig` | `--raster_rig` | `agent` (default): the rig the agent was trained on; `hugsim`: the scenario's cameras |
+
+`info['cam_params']` gives the scenario's cameras' intrinsics and extrinsics, but not the rest of
+what places them against the export: the camera config's `cam_rect`, the export's rig pitch
+(non-zero on KITTI-360), the cameras' height above its z = 0 road, and its xy origin. The export is
+centred on the road below `CAM_FRONT`, x along its heading, and the render places each camera
+from `CAM_FRONT` (`v2front @ inv(v2c) @ cam_rect`): a rig put at `inv(v2c)` in the export's
+frame has every camera 1.72 m forward of the render, `CAM_FRONT`'s position in the vehicle frame
+(the same `v2c` in all four camera configs). A `hugsim` raster drawn from `info` alone does not
+line up exactly with the `rgb` render.
+
+The agent does the drawing, so it decides what it can honour: Pictura's driver, for instance,
+draws `pv` on its own rig. An agent that cannot honour the mode or the raster request refuses it
+at its first step: it says why in its log (its stdout and stderr go to the episode's
+`output.txt`) and answers `None` on `plan_pipe`. `closed_loop.py` then ends the episode and
+sends `'Done'`. The episode folder has no `eval.json` and its `data.pkl` holds no frames, so
+`get_score.py` lists the scenario as missing; `closed_loop.py` still exits 0. An agent must
+answer, and then read that `'Done'`: one that raises or exits instead leaves `closed_loop.py`
+blocked on a pipe until something kills it, since nothing watches the agent's process during
+the episode.
+
+Neither abstract mode renders the cameras each step. Before the modes, an agent on the export
+still had all six cameras rendered and piped to it every step, and it never read them. The
+Gaussian model is still loaded: it gives the point clouds the collision checks and the scorer
+use, and the export is derived from it once per scene and cached (`sim/scene_export/sidecar.py`).
+The cameras are then rendered only for `video.mp4`, and `--video` sets how often: `full` (every
+step, the default in `rgb`, where the frames already exist), `sparse` (2 Hz of simulated time,
+the default in the abstract modes) or `off`. Scoring reads none of it.
+
+The shipped configs run `pictura` in `raster`; a vector checkpoint runs as a variant (below).
+
+### Running a variant
+
+Episode folders are named after the agent and the scenario's difficulty, not the observation
+mode (`<dataset>_<agent>/<scene>_<difficulty>`, e.g. `nuscenes_pictura/scene-0383_easy_00`), so
+a variant, a vector checkpoint say, runs under an agent name of its own. From the sweep scripts,
+its flags go in `HUGSIM_ARGS`, an environment variable that `run_dataset.sh` and `run_single.sh`
+split on whitespace and append to every `closed_loop.py` call. The variant's name reads none of
+the base agent's `base.<agent>_*` keys: its launcher comes from `HUGSIM_AD_<NAME>`, and its mode
+and raster request from the flags. The exception is a name starting with `dynamo`: every one
+takes the shared `base.dynamo_path` (`HUGSIM_AD_DYNAMO`), so a `dynamo` variant gets its own
+launcher from `--ad_path` in `HUGSIM_ARGS`. The launcher is not given the agent name, so the
+agent picks its checkpoint from its own environment (Pictura's reads `PICTURA_CHECKPOINT`):
+
+```bash
+PICTURA_CHECKPOINT=/path/to/vector.pt HUGSIM_AD_PICTURA_VECTOR=/path/to/Pictura-dev/hugsim_e2e.sh HUGSIM_ARGS="--obs_mode vector" bash run_dataset.sh pictura_vector nuscenes 0 0
+```
+
+These episodes land in `$HUGSIM_OUT/nuscenes_pictura_vector/`. `run_dataset.sh`'s skip, which
+lets a forward and a reverse worker split the scenes, looks for them under the `OUTPUT_PATH` set
+at the top of the script: it must be the same tree as `$HUGSIM_OUT`, as it is in the shipped
+`hugsim_env.sh`. `get_score.py` takes no arguments: to score the variant, edit its constants
+`MODEL_NAME` and `BENCH_ROOT` to `pictura_vector` and that tree. `run_all.sh` and
+`run_sweep.sh` take the agent name and pass it on. Any other `HUGSIM_ARGS` that changes what
+an episode is, such as another `--kinematic_path` (dt 0.1), needs an agent name of its own
+too, and the mode again: a `pictura` variant without `--obs_mode raster` runs in `rgb`, and
+Pictura refuses every episode.
+
+```bash
+HUGSIM_AD_PICTURA_10HZ=/path/to/Pictura-dev/hugsim_e2e.sh HUGSIM_ARGS="--obs_mode raster --kinematic_path ./configs/sim/kinematic_10hz.yaml" bash run_dataset.sh pictura_10hz nuscenes 0 0
+```
+
+`run_dataset.sh` refuses `--output_dir`, `--ad`, `--base_path` and `--scenario_path` in
+`HUGSIM_ARGS`, and any abbreviation of them: they would send the episode somewhere other than the
+folder `run_dataset.sh` checks for `eval.json`. `--skip-native-eval` writes no `eval.json`, so
+that check never sees a finished scene: run one worker then, not a forward and reverse pair. Calling `closed_loop.py` directly,
+`--ad pictura_vector --ad_path ...` and `--output_dir` both work.
 
 ## Environment
 
