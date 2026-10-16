@@ -1,5 +1,5 @@
-realcar_path: ${oc.env:HUGSIM_DATA}/HUGSIM-public/3DRealCar
-model_base: ${oc.env:HUGSIM_DATA}/HUGSIM-public/ss/scenes/waymo
+realcar_path: ${oc.env:HUGSIM_DATA}/HUGSIM/3DRealCar
+model_base: ${oc.env:HUGSIM_DATA}/HUGSIM/ss/scenes/waymo
 uniad_path: ${oc.env:HUGSIM_AD_UNIAD,agents/uniad/launch.sh}
 vad_path: ${oc.env:HUGSIM_AD_VAD,agents/vad/launch.sh}
 ltf_path: ${oc.env:HUGSIM_AD_LTF,agents/ltf/launch.sh}
