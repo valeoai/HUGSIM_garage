@@ -343,11 +343,15 @@ class Policy:
 
     def step(self, obs, info):
         agent_input, raw_imgs = self.spec.parse(obs, info)
-        if self.seed is not None:
-            torch.manual_seed(self.seed + self.count)
         t = time.time()
-        with torch.no_grad(), full_fp32(self.spec.fp32 and self.device.type == 'cuda'):
-            traj = getattr(self.model, self.spec.compute)(agent_input)
+        # A seeded step draws from a forked RNG: in closed_loop.py's --in_process mode the global
+        # one is the simulator's, whose adversary and planner sample from it.
+        devices = [self.device] if self.seed is not None and self.device.type == 'cuda' else []
+        with torch.random.fork_rng(devices=devices, enabled=self.seed is not None):
+            if self.seed is not None:
+                torch.manual_seed(self.seed + self.count)
+            with torch.no_grad(), full_fp32(self.spec.fp32 and self.device.type == 'cuda'):
+                traj = getattr(self.model, self.spec.compute)(agent_input)
         way_points = to_plan(traj.poses, self.spec.subsample)
         print(f'[{self.spec.name}] step {self.count}: {len(way_points)} waypoints in {time.time() - t:.2f} s', flush=True)
         self.count += 1

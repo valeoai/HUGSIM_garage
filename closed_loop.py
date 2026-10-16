@@ -3,6 +3,8 @@ import os
 import re
 import shutil
 import copy
+import threading
+import time
 sys.path.append(os.getcwd())
 
 import gymnasium
@@ -13,7 +15,7 @@ from sim.utils.sim_utils import traj2control, traj_transform_to_global
 import pickle
 import json
 import pickle
-from sim.utils.launch_ad import launch, check_alive
+from sim.utils.launch_ad import launch, check_alive, kill
 from omegaconf import OmegaConf
 import open3d as o3d
 from sim.utils.score_calculator import hugsim_evaluate
@@ -51,23 +53,61 @@ def video_stride(video, dt):
 class FifoAgent:
     """The agent as a separate process, over obs_pipe and plan_pipe (README.md, Agents)."""
 
-    def __init__(self, output):
+    def __init__(self, output, process):
+        self.output, self.process, self.finished = output, process, False
         self.obs_pipe = os.path.join(output, 'obs_pipe')
         self.plan_pipe = os.path.join(output, 'plan_pipe')
-        if not os.path.exists(self.obs_pipe):
-            os.mkfifo(self.obs_pipe)
-        if not os.path.exists(self.plan_pipe):
-            os.mkfifo(self.plan_pipe)
+        for path in (self.obs_pipe, self.plan_pipe):
+            try:
+                os.mkfifo(path)
+            except FileExistsError:  # an earlier run's, or the agent made it first
+                pass
+        if process is not None:  # None: an agent started by hand, for debugging
+            threading.Thread(target=self._watch, daemon=True).start()
+
+    def _watch(self):
+        """Release the simulator from a pipe the agent will never open again.
+
+        Opening a FIFO blocks until the other end is opened too, and nothing else watches the
+        agent during the episode, so an agent that exits early (a missing checkpoint, an import
+        error, a crash in a compiled op) used to leave the simulator waiting forever. Once the
+        process is gone, opening each pipe from the agent's side, without blocking, wakes the
+        simulator's open(); its read then finds no data and its write no reader, and ask() fails.
+        """
+        self.process.wait()
+        while not self.finished:
+            for path, flags in ((self.obs_pipe, os.O_RDONLY), (self.plan_pipe, os.O_WRONLY)):
+                try:
+                    os.close(os.open(path, flags | os.O_NONBLOCK))
+                except OSError:  # ENXIO: the simulator is not waiting on this one
+                    pass
+            time.sleep(0.2)
+
+    def _gone(self):
+        return RuntimeError(
+            f"the agent exited (code {self.process.poll()}) before answering; its log is "
+            f"{os.path.join(self.output, 'output.txt')}")
 
     def ask(self, obs, info):
-        with open(self.obs_pipe, "wb") as pipe:
-            pipe.write(pickle.dumps((obs, info)))
-        with open(self.plan_pipe, "rb") as pipe:
-            return pickle.loads(pipe.read())
+        message = pickle.dumps((obs, info))
+        try:
+            with open(self.obs_pipe, "wb") as pipe:
+                pipe.write(message)
+            with open(self.plan_pipe, "rb") as pipe:
+                reply = pipe.read()
+            return pickle.loads(reply)
+        except (BrokenPipeError, EOFError, pickle.UnpicklingError):
+            if self.process is not None and self.process.poll() is not None:
+                raise self._gone() from None
+            raise
 
     def done(self):
-        with open(self.obs_pipe, "wb") as pipe:
-            pipe.write(pickle.dumps('Done'))
+        try:
+            with open(self.obs_pipe, "wb") as pipe:
+                pipe.write(pickle.dumps('Done'))
+        except BrokenPipeError:
+            pass  # the agent is gone already; there is nobody to tell
+        self.finished = True
 
 
 class InProcessAgent:
@@ -90,8 +130,14 @@ class InProcessAgent:
         return copy.deepcopy(reply)
 
     def done(self):
+        # The episode's data.pkl, infos.pkl and eval.json are written after this: an agent's
+        # own end-of-episode work (its video, say) failing must not take them with it.
         if self.on_done is not None:
-            self.on_done()
+            try:
+                self.on_done()
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
 
 def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full'):
@@ -364,13 +410,9 @@ if __name__ == "__main__":
     output = os.path.join(cfg.base.output_dir, cfg.scenario.scene_name+"_"+cfg.scenario.mode)
     os.makedirs(output, exist_ok=True)
 
+    repo_root = os.path.dirname(os.path.abspath(__file__))
     if args.in_process:
-        try:
-            # Loaded before the episode starts, so a missing checkpoint or an unknown name stops
-            # the run here rather than inside it.
-            agent = InProcessAgent(args.ad, output, device='cuda')
-        except (KeyError, FileNotFoundError, ImportError) as e:
-            raise SystemExit(f"--in_process --ad {args.ad}: {e}")
+        launcher_in_repo = True
     else:
         # base.<ad>_path by convention, or --ad_path. 'dynamo*' variants share one launcher.
         if args.ad_path is not None:
@@ -385,21 +427,39 @@ if __name__ == "__main__":
                 raise SystemExit(
                     f"no launcher for --ad {args.ad}: pass --ad_path, export {env_var}, or add "
                     f"base.{ad_key}. Listed: {sorted(k for k in cfg.base if k.endswith('_path'))}")
-        # The shipped agents' launchers are in-repo paths (agents/...): one the cwd does not hold is
-        # taken relative to this checkout, so a run started elsewhere still finds them.
-        if ad_path and '/' in ad_path and not os.path.isabs(ad_path) and not os.path.isfile(ad_path):
-            repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ad_path)
-            if os.path.isfile(repo_path):
-                ad_path = repo_path
+        # The shipped agents' launchers are in-repo paths (agents/...), taken relative to this
+        # checkout before the cwd, so the launcher runs the same agents/ that --in_process imports.
+        if ad_path and '/' in ad_path and not os.path.isabs(ad_path) \
+                and os.path.isfile(os.path.join(repo_root, ad_path)):
+            ad_path = os.path.join(repo_root, ad_path)
         # bash reads the launcher from that file, relative to the cwd, or for a bare name from PATH.
         # Given anything else it exits at once, and the episode waits on obs_pipe for no one.
         if not ad_path or not (os.path.isfile(ad_path)
                                or ('/' not in ad_path and shutil.which(ad_path, mode=os.F_OK))):
             raise SystemExit(f"the launcher for --ad {args.ad} is {ad_path!r}, from {source}: not a file")
+        agents_dir = os.path.join(repo_root, 'agents', '')
+        launcher_in_repo = os.path.abspath(ad_path).startswith(agents_dir) \
+            and not os.path.abspath(ad_path).startswith(os.path.join(agents_dir, 'tools', ''))
+    # The agents under agents/ read their weights from HUGSIM_AGENT_CKPTS. Checked here, where
+    # the message can say so, rather than by an agent that would only fail once launched.
+    if launcher_in_repo and not os.environ.get('HUGSIM_AGENT_CKPTS'):
+        raise SystemExit(
+            f"--ad {args.ad} runs from agents/, which reads its weights from HUGSIM_AGENT_CKPTS: "
+            "set it to the checkpoint root (agents/README.md, Checkpoints)")
+
+    if args.in_process:
+        try:
+            # Loaded before the episode starts, so a missing checkpoint or an unknown name stops
+            # the run here rather than inside it. The device is the agent's default (cuda, or
+            # HUGSIM_AGENT_DEVICE), as over the pipes.
+            agent = InProcessAgent(args.ad, output, device=None)
+        except Exception as e:
+            raise SystemExit(f"--in_process --ad {args.ad}: {type(e).__name__}: {e}")
 
     # Files an earlier run left in the reused episode folder that this run may not rewrite:
-    # eval.json when it is refused or passes --skip-native-eval, video.mp4 with --video off.
-    for name in ('eval.json', 'video.mp4'):
+    # eval.json when it is refused or passes --skip-native-eval, video.mp4 with --video off,
+    # agent_crash.txt when the agent does not crash this time.
+    for name in ('eval.json', 'video.mp4', 'agent_crash.txt'):
         if os.path.exists(os.path.join(output, name)):
             os.remove(os.path.join(output, name))
     if args.in_process:
@@ -411,13 +471,16 @@ if __name__ == "__main__":
     else:
         process = launch(ad_path, args.ad_cuda, output)
         try:
-            create_gym_env(cfg, output, FifoAgent(output), skip_native_eval=args.skip_native_eval,
-                           video=video)
+            create_gym_env(cfg, output, FifoAgent(output, process),
+                           skip_native_eval=args.skip_native_eval, video=video)
             check_alive(process)
-        except Exception as e:
+        except Exception:
             import traceback
             traceback.print_exc()
-            process.kill()
-    
-    # For debug
-    # create_gym_env(cfg, output)
+        finally:
+            # Whatever ended the episode (an exception, Ctrl-C), nothing the launcher started
+            # outlives it: the agent runs in a session of its own (sim/utils/launch_ad.py).
+            kill(process)
+
+    # For debug, without launching the agent: start it by hand on the episode folder, then
+    # create_gym_env(cfg, output, FifoAgent(output, process=None))

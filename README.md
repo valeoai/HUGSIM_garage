@@ -59,6 +59,17 @@ height; reactive agents gain, because it was also inventing collisions overhead.
   `HUGSIM_ARGS`, split on whitespace, to every `closed_loop.py` call. `run_dataset.sh` refuses
   `--output_dir`, `--ad`, `--base_path` and `--scenario_path` there, since they pick the episode
   folder its `eval.json` skip reads. See [Running a variant](#running-a-variant).
+* **The baseline agents ship in [`agents/`](agents/README.md).** The configs' `base.<ad>_path` is
+  `${oc.env:HUGSIM_AD_<NAME>,agents/...}`: the in-repo launcher unless the variable is exported.
+  A relative launcher path is taken against this checkout before the cwd. Their weights come from
+  `HUGSIM_AGENT_CKPTS`, which `closed_loop.py` checks before launching one of them.
+* **`--in_process`** calls an agent's step function in the simulator's process instead of over
+  the pipes, for the agents in `agents/registry.py`. The default stays the FIFO.
+* **An agent that exits early no longer hangs the episode.** `closed_loop.py` watches the
+  launcher's process and, once it is gone, releases whichever pipe the simulator waits on; the
+  episode then ends with an error naming the agent's exit code and log. The launcher runs in a
+  session of its own and its whole process group is killed at the end, so an agent behind
+  `pixi run` or `conda run` (which fork rather than exec) is not left holding its GPU.
 
 # Agents
 
@@ -184,8 +195,8 @@ that check never sees a finished scene: run one worker then, not a forward and r
 
 ## Environment
 
-The configs interpolate these; `closed_loop.py` checks only the ones a given run reads and
-reports them all at once:
+The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read
+themselves); `closed_loop.py` checks only the ones a given run reads and reports them all at once:
 
 | variable | what it is |
 |---|---|
@@ -318,19 +329,12 @@ for cfg in ${scenario_dir}/*.yaml; do
 done
 ```
 
-In practice, you may encounter errors due to an incorrect environment, path, and etc. For debugging purposes, you can modify the last part of code as:
-```python
-# process = launch(ad_path, args.ad_cuda, output)
-# try:
-#     create_gym_env(cfg, output)
-#     check_alive(process)
-# except Exception as e:
-#     print(e)
-#     process.kill()
-
-# For debug
-create_gym_env(cfg, output)
-```
+In practice, you may encounter errors due to an incorrect environment, path, and etc. The agent's
+own output is in `<episode>/output.txt`, and a step that raised leaves its traceback in
+`<episode>/agent_crash.txt`. To debug the agent by hand, replace the launch at the end of
+`closed_loop.py` with `create_gym_env(cfg, output, FifoAgent(output, process=None))` and start the
+agent yourself on the episode folder; an agent in `agents/registry.py` can instead run with
+`--in_process`, where a breakpoint in its step stops the simulator too.
 
 # TODO list
 - [x] Release sample data and results

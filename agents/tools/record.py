@@ -7,7 +7,8 @@ any model. After ``--steps`` requests it answers ``None``, which ends the episod
     HUGSIM_RECORD_OUT=/tmp/frames HUGSIM_RECORD_STEPS=12 python closed_loop.py ... \
         --ad record --ad_path agents/tools/record.sh
 
-``agents/tools/parity.py`` then feeds these frames to two implementations of an agent.
+``agents/tools/plans.py`` (and ``agents/mmdet3d/plans.py``) then replays these frames through an
+agent offline, so two implementations can be compared on the same inputs.
 """
 
 import argparse

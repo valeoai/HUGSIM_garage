@@ -40,7 +40,7 @@ conda or pixi environment, `LD_PRELOAD`, and the `CONDA_*`, `PIXI_*`, `VIRTUAL_E
 | variable | |
 |---|---|
 | `HUGSIM_AGENT_CKPTS` | checkpoint root, required |
-| `HUGSIM_MMDET3D_PYTHON` | python of an environment you manage yourself, instead of pixi |
+| `HUGSIM_MMDET3D_PYTHON` | python of an environment you manage yourself, instead of pixi (the launcher clears `LD_PRELOAD`, and pixi's activation is what preloads the environment's `libstdc++`; a pip-wheel env may need its own, see `pixi.toml`) |
 | `HUGSIM_AGENT_VIZ=1` | write the agent's visualisation to `<episode>/uniad` or `<episode>/vad` (frames and `video.mp4`); off by default |
 | `HUGSIM_VAD_EVAL=1` | put VAD in `eval()` mode (see below) |
 

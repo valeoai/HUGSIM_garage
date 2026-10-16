@@ -7,6 +7,7 @@ anything off the CPU.
 """
 
 import os
+import pickle
 
 import torch
 
@@ -20,7 +21,7 @@ def load_checkpoint(path, name):
         )
     try:
         return torch.load(path, map_location='cpu', weights_only=True)['state_dict']
-    except Exception:  # a checkpoint that stores more than tensors and plain containers
+    except pickle.UnpicklingError:  # a checkpoint that stores more than tensors and plain containers
         return torch.load(path, map_location='cpu', weights_only=False)['state_dict']
 
 

@@ -71,6 +71,11 @@ def serve(episode_dir, step, on_done=None, name='agent'):
     while True:
         with open(obs_pipe, 'rb') as pipe:
             raw = pipe.read()
+        if not raw:
+            # The simulator closed the pipe without writing: it is gone, and an answer would
+            # wait forever for a reader. There is no 'Done' coming either.
+            print(f'[{name}] the simulator closed the pipe without a request; stopping', flush=True)
+            return planned
         # A request this environment cannot unpickle (a numpy 2.x simulator talking to a
         # numpy 1.x agent, say) is answered None like a step that raised, not left unanswered.
         request = answer(lambda *_: pickle.loads(raw), None, None, episode_dir, name, planned)

@@ -36,9 +36,11 @@ python closed_loop.py --scenario_path ... --base_path ./configs/sim/nuscenes_bas
 
 The shipped configs launch each agent from here (`base.<ad>_path:
 ${oc.env:HUGSIM_AD_<NAME>,agents/...}`); an exported `HUGSIM_AD_<NAME>` still replaces the
-launcher, so unset it to use these. The NAVSIM-family launchers run `python` from the
-environment they are started in, which is the simulator's (`HUGSIM_AGENT_PYTHON` names another);
-the UniAD and VAD launchers clear the simulator's environment and start their own.
+launcher, so unset it to use these. The NAVSIM-family launchers run the simulator's own
+interpreter (`closed_loop.py` passes it as `HUGSIM_AGENT_PYTHON`, unless that is already set);
+the UniAD and VAD launchers clear the simulator's environment and start their own. An agent
+that exits early (a missing checkpoint, an unbuilt environment) ends the episode with an error
+naming its log, rather than leaving the simulator waiting on a pipe.
 
 ### In-process
 
@@ -49,7 +51,8 @@ with no launcher and no pipes:
 python closed_loop.py ... --ad ltf --in_process
 ```
 
-`closed_loop.py` imports the step function from `registry.py` and calls it each step. On LTF,
+`closed_loop.py` imports the step function from `registry.py` and calls it each step, on the
+device the agent would pick over the pipes (`cuda`, or `HUGSIM_AGENT_DEVICE`). On LTF,
 scene-0383 easy, a step costs 30 to 75 ms instead of 46 to 117 ms over the pipes (no 16 MB pickle
 of six cameras per step, one CUDA context instead of two), and a crash cannot leave the episode
 waiting on a pipe. The agent runs on the simulator's GPU (`--ad_cuda` does not apply), and its
@@ -86,7 +89,8 @@ These are how the original clients drove HUGSIM, so they are kept:
 * **VAD runs in training mode**: upstream never called `model.eval()`, so GridMask and dropout
   stay active and its plans are stochastic. `HUGSIM_VAD_EVAL=1` turns that off.
 * **DrivoR's CEM refinement samples noise** and the original client never seeded it.
-  `HUGSIM_AGENT_SEED` seeds it (`seed + step` before each step).
+  `HUGSIM_AGENT_SEED` seeds it (`seed + step` before each step, on a forked RNG, so in-process
+  it leaves the simulator's own random stream alone).
 * **LTF and DrivoR ran on the CPU** (the model was never moved to the GPU). They now run on
   the GPU with TF32 off for their step, which keeps their plans within 2e-5 m of the CPU ones;
   `HUGSIM_AGENT_DEVICE=cpu` runs the old path.
@@ -98,7 +102,7 @@ What changed: a step that fails is answered `None` (the episode ends) instead of
 | variable | |
 |---|---|
 | `HUGSIM_AGENT_CKPTS` | checkpoint root, required |
-| `HUGSIM_AGENT_PYTHON` | python for the NAVSIM-family launchers (default: `python`) |
+| `HUGSIM_AGENT_PYTHON` | python for the NAVSIM-family launchers (default: the simulator's) |
 | `HUGSIM_MMDET3D_PYTHON` | python of an environment you manage, for UniAD and VAD (default: `pixi run` in `mmdet3d/`); `PIXI` names the pixi binary |
 | `HUGSIM_AGENT_DEVICE` | `cuda` (default) or `cpu`, NAVSIM family |
 | `HUGSIM_AGENT_SEED` | seed the step, NAVSIM family |
@@ -114,9 +118,10 @@ from agents.client import serve
 serve(episode_dir, step)   # step(obs, info) -> (N, 2) plan, (right, forward) m, 0.5 s apart
 ```
 
-`serve` answers every request (`None` when `step` raises, with the traceback in
-`<episode>/agent_crash.txt`) and returns after the simulator's `'Done'`, so the episode never
-waits on an agent that is gone. An agent that runs in the simulator's environment can also be
+`serve` answers every request (`None` when `step` raises or the request cannot be unpickled,
+with the traceback in `<episode>/agent_crash.txt`) and returns after the simulator's `'Done'`,
+or when the simulator closes the pipe without writing. For what `serve` cannot cover (an agent
+that dies before serving, or crashes outright), `closed_loop.py` watches the launcher's process. An agent that runs in the simulator's environment can also be
 listed in `registry.py`, which makes `--in_process` available to it.
 
 ## Checking a port
