@@ -10,10 +10,11 @@ agents that drive in it. The simulator and the data are Zhou et al.'s work ([pap
 we opened four days later is still open. Rather than carry fixes as patches in every project
 that uses the simulator, they live here on `main`, with their upstream status recorded below.
 
-**A place to gather the baseline agents.** Running a closed loop needs an AD side, and those sit
-in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM, and whatever you are building). The
-interface for plugging one in is described under [Agents](#agents) and needs no fork, no config
-file and no edit to `closed_loop.py`.
+**A place to gather the baseline agents.** Running a closed loop needs an AD side. Upstream's
+sat in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM), each with its own environment; here
+they are in [`agents/`](agents/README.md): UniAD and VAD with the mmcv environment they need,
+LTF, DrivoR, GTRS, ZTRS and GTRS-Aug in the simulator's own. Plugging in one of your own needs no
+fork, no config file and no edit to `closed_loop.py`, see [Agents](#agents).
 
 ## What this fork changes
 
@@ -78,9 +79,15 @@ launching removes an earlier run's `eval.json` and `video.mp4` from the episode 
 neither outlives a run that does not write it (an agent's refusal or `--skip-native-eval` writes
 no `eval.json`, `--video off` no `video.mp4`).
 
-The shipped configs name `uniad`, `vad`, `ltf`, `dynamo`, `gtrs`, `ztrs`, `gtrs_aug` and
-`pictura`, each reading its own variable, because these live in unrelated checkouts and share no
-root.
+The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `gtrs`, `ztrs` and `gtrs_aug`, whose
+launchers are in [`agents/`](agents/README.md) (`base.<ad>_path` is
+`${oc.env:HUGSIM_AD_<NAME>,agents/...}`, so an exported variable still replaces one), and
+`dynamo` and `pictura`, which live in unrelated checkouts and read their variable alone.
+
+The agents that run in this environment (`ltf`, `drivor`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
+`agents/registry.py`) can be called in the simulator's process instead, with `--in_process`: no
+launcher, no pipes, and a step of LTF about 1.5 times faster. See
+[agents/README.md](agents/README.md#in-process).
 
 ## Observation modes
 
@@ -184,7 +191,8 @@ reports them all at once:
 |---|---|
 | `HUGSIM_DATA` | the data tree (`HUGSIM-public` / `HUGSIM-private`) |
 | `HUGSIM_OUT` | where episode folders are written, or pass `--output_dir` |
-| `HUGSIM_AD_<NAME>` | one per agent, or pass `--ad_path` |
+| `HUGSIM_AD_<NAME>` | an agent's launcher, or pass `--ad_path`; needed only for agents not in `agents/` |
+| `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)) |
 | `NUSCENES_RAW` | raw nuScenes, read only by scenarios with `load_HD_map: true` |
 
 ---
@@ -267,9 +275,12 @@ Here is a video for the GUI usage demonstration: [GUI Video](https://github.com/
 
 # Simulation
 
-**Before simulation, [UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM) and [NAVSIM](https://github.com/hyzhou404/NAVSIM) client should be installed. The client environments are allowed to be separated from the HUGSIM environment.**
-
-The dependencies for NAVSIM are already specified as the pixi environment file, so you don't need to manually install the dependencies.
+**The AD clients are in [`agents/`](agents/README.md)**, vendored from upstream's
+[UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM)
+and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, GTRS, ZTRS and GTRS-Aug run in
+the pixi environment above; UniAD and VAD need the environment in `agents/mmdet3d/` (one
+`pixi install` and two build tasks, [agents/mmdet3d/README.md](agents/mmdet3d/README.md)). All of
+them read their weights from `HUGSIM_AGENT_CKPTS`.
 
 In **closed_loop.py**, we automatically launch autonomous driving algorithms.
 
@@ -282,7 +293,7 @@ python closed_loop.py --scenario_path ./configs/benchmark/${dataset_name}/${scen
             --base_path ./configs/sim/${dataset_name}_base.yaml \
             --camera_path ./configs/sim/${dataset_name}_camera.yaml \
             --kinematic_path ./configs/sim/kinematic.yaml \
-            --ad ${method_name: [uniad, vad, ltf]} \
+            --ad ${method_name: [uniad, vad, ltf, drivor, gtrs, ztrs, gtrs_aug]} \
             --ad_cuda ${ad_cuda}
 ```
 

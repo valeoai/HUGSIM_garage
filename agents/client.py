@@ -70,11 +70,13 @@ def serve(episode_dir, step, on_done=None, name='agent'):
     planned = 0
     while True:
         with open(obs_pipe, 'rb') as pipe:
-            request = pickle.loads(pipe.read())
+            raw = pipe.read()
+        # A request this environment cannot unpickle (a numpy 2.x simulator talking to a
+        # numpy 1.x agent, say) is answered None like a step that raised, not left unanswered.
+        request = answer(lambda *_: pickle.loads(raw), None, None, episode_dir, name, planned)
         if isinstance(request, str) and request == 'Done':
             break
-        obs, info = request
-        reply = answer(step, obs, info, episode_dir, name, planned)
+        reply = None if request is None else answer(step, *request, episode_dir, name, planned)
         with open(plan_pipe, 'wb') as pipe:
             pipe.write(pickle.dumps(reply))
         if reply is not None:
