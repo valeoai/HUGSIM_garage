@@ -195,10 +195,17 @@ be rescored:
 python score_realized.py --runs nuscenes_uniad nuscenes_vad --out realized.json   # runs under $HUGSIM_OUT
 ```
 
-It is reported with two route completions, because TerraTransfer's own texts differ:
-`score_rc_index` uses HUGSIM's (the ICLR 2027 submission's choice, comparable with HUGSIM's
-published numbers), `score_rc_arclength` the arc-length fraction of the recorded track (arXiv
-v1/v2). The comfort term is only comparable at the same simulator step: the window is fixed in
+`realized_score.json` (and each entry of `score_realized.py`'s output) carries the three HD-Score
+variants side by side:
+
+| key | score | route completion |
+|---|---|---|
+| `hdscore` | HUGSIM's, of the planned trajectory, copied from `eval.json` (`null` without one, e.g. `--skip-native-eval`) | HUGSIM's |
+| `hdscore_realized` | TerraTransfer's, of the realized trajectory | HUGSIM's index fraction, `rc`: the ICLR 2027 submission's choice, comparable with HUGSIM's published numbers |
+| `hdscore_realized_arclength` | the same | arc-length fraction of the recorded track, `rc_arclength` (arXiv v1/v2) |
+
+The two realized variants differ only by route completion; the index one is usually the higher
+(about 1.14x on average). The comfort term is only comparable at the same simulator step: the window is fixed in
 seconds, but jerk is a third finite difference at dt, and the paper runs at dt = 0.1 s
 (`configs/sim/kinematic_10hz.yaml`). An episode the agent ended by answering `None` is recorded as
 `{"crashed": true}` rather than scored. `sim/utils/realized_score.py` has the definitions.

@@ -19,11 +19,15 @@ with it. Per keyframe t (every 0.5 s of the rollout):
 
 score = mean_t [ NC_t * DAC_t * (5 TTC_t + 2 COM_t) / 7 ] * R_c   (TerraTransfer's "HD-Score")
 
-Two route-completion conventions are reported, because the paper's own differ and R_c multiplies
-the whole score: ``rc_arclength`` / ``score_rc_arclength`` use the arc length above (arXiv v1/v2,
-App. B Eq. 14); ``rc_index`` / ``score_rc_index`` use HUGSIM's own index fraction, which the ICLR
-2027 submission reverts to so that its numbers stay comparable with HUGSIM's. Neither is called
-``hdscore``: that name is HUGSIM's own score, of the planned trajectory, in eval.json.
+Three HD-Score variants are reported side by side, because TerraTransfer's own texts differ on
+route completion and R_c multiplies the whole score:
+
+  hdscore                      HUGSIM's own score, of the planned trajectory, copied from the
+                               episode's eval.json (None without one), not recomputed
+  hdscore_realized             this score with HUGSIM's index fraction ``rc``, which the ICLR 2027
+                               submission reverts to so that its numbers stay comparable with HUGSIM's
+  hdscore_realized_arclength   this score with the arc length above, ``rc_arclength`` (arXiv v1/v2,
+                               App. B Eq. 14)
 
 Everything is read from what HUGSIM saves per episode (data.pkl, ground.ply, scene.ply) plus the
 scene's ground_param.pkl, so any past run can be rescored: score_realized.py does that for
@@ -304,24 +308,28 @@ def score_episode(ep_dir, scene_dir):
 
     track, s_track = densify(camera_track(scene_dir))
     s_ego = s_track[cKDTree(track).query(ego[:, :2])[1]]
-    rc = float(min(1.0, s_ego.max() / max(s_track[-1], 1e-9)))
+    rc_arclength = float(min(1.0, s_ego.max() / max(s_track[-1], 1e-9)))
     # Two route-completion conventions, because the paper's own differ and R_c multiplies the
     # whole score (native runs ~1.14x arc-length here, so the choice is not cosmetic):
+    #   rc            HUGSIM's index fraction min(1, max_t (k_t + 1) / (0.9 N)), which the ICLR 2027
+    #                 submission reverts to, "so that every method ... remains comparable with the
+    #                 numbers HUGSim publishes". Read straight off the frames HUGSIM recorded.
     #   rc_arclength  arc-length fraction of the densified camera track (arXiv v1/v2, App. B Eq. 14)
-    #   rc_index      HUGSIM's index fraction min(1, max_t (k_t + 1) / (0.9 N)), which the ICLR 2027
-    #               submission reverts to, "so that every method ... remains comparable with the
-    #               numbers HUGSim publishes". Read straight off the frames HUGSIM recorded.
     native = [f["rc"] for f in frames if f.get("rc") is not None]
-    rc_index = float(min(1.0, max(native))) if native else rc
+    rc = float(min(1.0, max(native))) if native else rc_arclength
     mean = {k: float(np.mean([p[k] for p in per])) for k in ("nc", "dac", "ttc", "c", "pdms")}
-    # Named by their route completion, never `hdscore`: that key is HUGSIM's own score, of the
-    # planned trajectory, in eval.json.
+    # `hdscore` is HUGSIM's own score, of the planned trajectory, copied from eval.json (None when
+    # the episode has none: --skip-native-eval, or HUGSIM's scorer died), so the three variants sit
+    # side by side; this scorer's own is `hdscore_realized`.
+    eval_path = os.path.join(ep_dir, "eval.json")
+    hdscore = json.load(open(eval_path)).get("hdscore") if os.path.isfile(eval_path) else None
     return {
+        "hdscore": hdscore,
         **mean,
-        "rc_arclength": rc,
-        "score_rc_arclength": mean["pdms"] * rc,
-        "rc_index": rc_index,
-        "score_rc_index": mean["pdms"] * rc_index,
+        "rc": rc,
+        "hdscore_realized": mean["pdms"] * rc,
+        "rc_arclength": rc_arclength,
+        "hdscore_realized_arclength": mean["pdms"] * rc_arclength,
         "keyframes": len(per),
     }
 
