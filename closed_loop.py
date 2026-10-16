@@ -331,6 +331,12 @@ if __name__ == "__main__":
             raise SystemExit(
                 f"no launcher for --ad {args.ad}: pass --ad_path, export {env_var}, or add "
                 f"base.{ad_key}. Listed: {sorted(k for k in cfg.base if k.endswith('_path'))}")
+    # The shipped agents' launchers are in-repo paths (agents/...): one the cwd does not hold is
+    # taken relative to this checkout, so a run started elsewhere still finds them.
+    if ad_path and '/' in ad_path and not os.path.isabs(ad_path) and not os.path.isfile(ad_path):
+        repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ad_path)
+        if os.path.isfile(repo_path):
+            ad_path = repo_path
     # bash reads the launcher from that file, relative to the cwd, or for a bare name from PATH.
     # Given anything else it exits at once, and the episode waits on obs_pipe for no one.
     if not ad_path or not (os.path.isfile(ad_path)

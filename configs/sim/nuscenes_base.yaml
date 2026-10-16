@@ -1,12 +1,13 @@
 realcar_path: ${oc.env:HUGSIM_DATA}/HUGSIM-public/3DRealCar
 model_base: ${oc.env:HUGSIM_DATA}/HUGSIM-public/ss/scenes/nuscenes
-uniad_path: ${oc.env:HUGSIM_AD_UNIAD}
-vad_path: ${oc.env:HUGSIM_AD_VAD}
-ltf_path: ${oc.env:HUGSIM_AD_LTF}
+uniad_path: ${oc.env:HUGSIM_AD_UNIAD,agents/mmdet3d/uniad.sh}
+vad_path: ${oc.env:HUGSIM_AD_VAD,agents/mmdet3d/vad.sh}
+ltf_path: ${oc.env:HUGSIM_AD_LTF,agents/navsim/ltf.sh}
+drivor_path: ${oc.env:HUGSIM_AD_DRIVOR,agents/navsim/drivor.sh}
 dynamo_path: ${oc.env:HUGSIM_AD_DYNAMO}
-gtrs_path: ${oc.env:HUGSIM_AD_GTRS}
-ztrs_path: ${oc.env:HUGSIM_AD_ZTRS}
-gtrs_aug_path: ${oc.env:HUGSIM_AD_GTRS_AUG}
+gtrs_path: ${oc.env:HUGSIM_AD_GTRS,agents/navsim/gtrs.sh}
+ztrs_path: ${oc.env:HUGSIM_AD_ZTRS,agents/navsim/ztrs.sh}
+gtrs_aug_path: ${oc.env:HUGSIM_AD_GTRS_AUG,agents/navsim/gtrs_aug.sh}
 pictura_path: ${oc.env:HUGSIM_AD_PICTURA}
 # This agent drives from the scene exported as geometry, which it rasterizes itself, rather
 # than from the Gaussian render. A vector checkpoint runs under an agent name of its own
