@@ -9,6 +9,7 @@ import hugsim_env
 from hugsim_env.envs.hug_sim import OBS_MODES, RASTER_RIGS, RASTER_VIEWS, resolve_raster
 from argparse import ArgumentParser
 from sim.utils.sim_utils import traj2control, traj_transform_to_global
+from sim.ilqr.lqr import set_max_solve_time
 import pickle
 import json
 import pickle
@@ -259,7 +260,16 @@ if __name__ == "__main__":
         help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
              "still written, so the episode can be scored offline",
     )
+    parser.add_argument(
+        "--deterministic_tracker",
+        action="store_true",
+        help="stop the iLQR tracker on its iteration cap and convergence only, not on its 0.05 s "
+             "wall-clock budget, so an episode no longer depends on how busy the machine is. "
+             "Changes the controls, hence the episode: run it under an agent name of its own",
+    )
     args = parser.parse_args()
+    if args.deterministic_tracker:
+        set_max_solve_time(None)
 
     scenario_config = OmegaConf.load(args.scenario_path)
     base_config = OmegaConf.load(args.base_path)

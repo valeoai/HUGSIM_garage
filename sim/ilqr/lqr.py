@@ -38,6 +38,19 @@ lqr = ILQRSolver(solver_params=solver_params, warm_start_params=warm_start_param
 _solvers = {solver_params.discretization_time: lqr}
 
 
+def set_max_solve_time(seconds):
+    """The wall-clock budget of one solve, or None to stop on iterations and convergence alone.
+
+    The shipped 0.05 s (nuPlan's) makes the number of iterations, hence the command, depend on
+    how busy the machine is: the same plan from the same state can be tracked differently from
+    one run to the next. None makes the tracker a function of its inputs. Cached solvers are
+    dropped, so the next solve uses the new budget.
+    """
+    global solver_params
+    solver_params = replace(solver_params, max_solve_time=None if seconds is None else float(seconds))
+    _solvers.clear()
+
+
 def _get_solver(discretization_time):
     if discretization_time not in _solvers:
         _solvers[discretization_time] = ILQRSolver(
