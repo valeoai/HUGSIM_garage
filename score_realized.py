@@ -5,7 +5,8 @@ See sim/utils/realized_score.py for what it measures.
     python score_realized.py --runs nuscenes_uniad nuscenes_vad --out realized.json
 
 A run is an output folder under --out-root (``$HUGSIM_OUT`` by default), named as closed_loop.py
-names them: ``<dataset>_<agent>``. Each of its episodes is scored once and kept in --out, which is
+names them: ``<dataset>_<agent>``, possibly below a folder of its own (``official436/nuscenes_uniad``,
+say: only the last part names the dataset). Each of its episodes is scored once and kept in --out, which is
 updated in place after every episode, so an interrupted pass resumes where it stopped. An episode
 whose AD side crashed (agents/client.py's agent_crash.txt, or Pictura's pictura_crash.json) is
 recorded as ``{"crashed": true, ...}`` rather than scored, and a cached crash is scored again on
@@ -34,7 +35,7 @@ def main():
     ap.add_argument("--out-root", default=os.environ.get("HUGSIM_OUT"),
                     help="the folder the runs are in (default: $HUGSIM_OUT)")
     ap.add_argument("--data-root", default=os.environ.get("HUGSIM_DATA"),
-                    help="the data tree holding HUGSIM-{public,private}/ss/scenes (default: $HUGSIM_DATA)")
+                    help="the data tree holding HUGSIM/ss/scenes (default: $HUGSIM_DATA)")
     ap.add_argument("--out", required=True, help="JSON cache of per-episode scores (updated in place)")
     ap.add_argument("--only", nargs="*", default=None, help="restrict to these episode folder names")
     args = ap.parse_args()
@@ -46,7 +47,7 @@ def main():
     for run in args.runs:
         # closed_loop.py names a run <dataset>_<agent> under $HUGSIM_OUT; one written with
         # --output_dir carries no dataset, and its scenes are looked up in all of them.
-        prefix = run.split("_")[0]
+        prefix = os.path.basename(run.rstrip("/")).split("_")[0]
         datasets = (prefix,) if prefix in DATASETS else DATASETS
         # data.pkl, not eval.json: HUGSIM writes it when the episode ends, before its own scorer
         # runs, and that scorer sometimes dies; everything this reads is there all the same.

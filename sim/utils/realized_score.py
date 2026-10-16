@@ -164,15 +164,14 @@ DATASETS = ("kitti360", "nuscenes", "pandaset", "waymo")
 
 
 def find_scene_dir(data_root, datasets, scene_name):
-    """The reconstructed scene an episode ran in: HUGSIM-{public,private}/ss/scenes/<dataset>/<scene>.
+    """The reconstructed scene an episode ran in: <data_root>/HUGSIM/ss/scenes/<dataset>/<scene>.
 
     ``datasets`` is one dataset name or several to search, in order.
     """
     for dataset in (datasets,) if isinstance(datasets, str) else datasets:
-        for split in ("public", "private"):
-            path = os.path.join(data_root, f"HUGSIM-{split}", "ss", "scenes", dataset, scene_name)
-            if os.path.isfile(os.path.join(path, "ground_param.pkl")):
-                return path
+        path = os.path.join(data_root, "HUGSIM", "ss", "scenes", dataset, scene_name)
+        if os.path.isfile(os.path.join(path, "ground_param.pkl")):
+            return path
     raise FileNotFoundError(f"no ground_param.pkl for {scene_name} in {datasets} under {data_root}")
 
 
