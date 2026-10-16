@@ -19,6 +19,7 @@ from sim.utils.launch_ad import launch, check_alive, kill
 from omegaconf import OmegaConf
 import open3d as o3d
 from sim.utils.score_calculator import hugsim_evaluate
+from sim.utils.realized_score import score_episode
 import numpy as np
 from moviepy import ImageSequenceClip
 
@@ -140,13 +141,14 @@ class InProcessAgent:
                 traceback.print_exc()
 
 
-def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full'):
+def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
     observations_save, infos_save = [], []
     obs, info = env.reset()
     done = False
+    ad_crashed = False
     cnt = 0
     save_data = {'type': 'closeloop', 'frames': []}
 
@@ -238,6 +240,7 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full'):
 
         else:  # AD Side Crushed
             done = True
+            ad_crashed = True
 
     agent.done()
 
@@ -261,6 +264,16 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full'):
         results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
         with open(os.path.join(output, 'eval.json'), 'w') as f:
             json.dump(results, f)
+
+    # The realized score, TerraTransfer's closed-loop HD-Score (sim/utils/realized_score.py), beside
+    # HUGSIM's own: an episode the AD side ended by answering None is a crash, not a drive.
+    if realized_score:
+        if ad_crashed:
+            result = {"crashed": True, "crash_step": cnt, "error": "the AD side answered None"}
+        else:
+            result = score_episode(output, cfg.model_path)
+        with open(os.path.join(output, 'realized_score.json'), 'w') as f:
+            json.dump(result, f)
 
 
 
@@ -344,6 +357,12 @@ if __name__ == "__main__":
         action="store_true",
         help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
              "still written, so the episode can be scored offline",
+    )
+    parser.add_argument(
+        "--realized_score",
+        action="store_true",
+        help="also write realized_score.json: TerraTransfer's closed-loop HD-Score, of the realized "
+             "trajectory (sim/utils/realized_score.py), next to HUGSIM's own eval.json",
     )
     parser.add_argument(
         "--in_process",
@@ -469,12 +488,13 @@ if __name__ == "__main__":
     # Files an earlier run left in the reused episode folder that this run may not rewrite:
     # eval.json when it is refused or passes --skip-native-eval, video.mp4 with --video off,
     # agent_crash.txt when the agent does not crash this time.
-    for name in ('eval.json', 'video.mp4', 'agent_crash.txt'):
+    for name in ('eval.json', 'video.mp4', 'agent_crash.txt', 'realized_score.json'):
         if os.path.exists(os.path.join(output, name)):
             os.remove(os.path.join(output, name))
     if args.in_process:
         try:
-            create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video)
+            create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
+                           realized_score=args.realized_score)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -482,7 +502,8 @@ if __name__ == "__main__":
         process = launch(ad_path, args.ad_cuda, output)
         try:
             create_gym_env(cfg, output, FifoAgent(output, process),
-                           skip_native_eval=args.skip_native_eval, video=video)
+                           skip_native_eval=args.skip_native_eval, video=video,
+                           realized_score=args.realized_score)
             check_alive(process)
         except Exception:
             import traceback
