@@ -2,7 +2,7 @@
 
 See sim/utils/realized_score.py for what it measures.
 
-    python score_realized.py --runs nuscenes_uniad nuscenes_vad --out realized.json
+    python score_realized.py --runs official436/nuscenes_uniad official436/nuscenes_vad --out realized.json
 
 A run is an output folder under --out-root (``$HUGSIM_OUT`` by default), named as closed_loop.py
 names them: ``<dataset>_<agent>``, possibly below a folder of its own (``official436/nuscenes_uniad``,
