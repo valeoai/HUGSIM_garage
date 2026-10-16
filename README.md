@@ -159,7 +159,7 @@ The shipped configs run `pictura` in `raster`; a vector checkpoint runs as a var
 ### Running a variant
 
 Episode folders are named after the agent and the scenario's difficulty, not the observation
-mode (`<dataset>_<agent>/<scene>_<difficulty>`, e.g. `nuscenes_pictura/scene-0383_easy_00`), so
+mode (`<set>/<dataset>_<agent>/<scene>_<difficulty>`, e.g. `official436/nuscenes_pictura/scene-0383_easy_00`), so
 a variant, a vector checkpoint say, runs under an agent name of its own. From the sweep scripts,
 its flags go in `HUGSIM_ARGS`, an environment variable that `run_dataset.sh` and `run_single.sh`
 split on whitespace and append to every `closed_loop.py` call. The variant's name reads none of
@@ -173,12 +173,10 @@ agent picks its checkpoint from its own environment (Pictura's reads `PICTURA_CH
 PICTURA_CHECKPOINT=/path/to/vector.pt HUGSIM_AD_PICTURA_VECTOR=/path/to/Pictura-dev/hugsim_e2e.sh HUGSIM_ARGS="--obs_mode vector" bash run_dataset.sh pictura_vector nuscenes 0 0
 ```
 
-These episodes land in `$HUGSIM_OUT/nuscenes_pictura_vector/`. `run_dataset.sh`'s skip, which
-lets a forward and a reverse worker split the scenes, looks for them under the `OUTPUT_PATH` set
-at the top of the script: it must be the same tree as `$HUGSIM_OUT`, as it is in the shipped
-`hugsim_env.sh`. `get_score.py` takes no arguments: to score the variant, edit its constants
-`MODEL_NAME` and `BENCH_ROOT` to `pictura_vector` and that tree. `run_all.sh` and
-`run_sweep.sh` take the agent name and pass it on. Any other `HUGSIM_ARGS` that changes what
+These episodes land in `$HUGSIM_OUT/official436/nuscenes_pictura_vector/`. `run_dataset.sh`'s
+skip, which lets a forward and a reverse worker split the scenes, looks for them there, under the
+same `$HUGSIM_OUT` that `closed_loop.py` writes to. `python get_score.py official436 pictura_vector`
+scores the variant. `run_all.sh` and `run_sweep.sh` take the agent name and pass it on. Any other `HUGSIM_ARGS` that changes what
 an episode is, such as another `--kinematic_path` (dt 0.1), needs an agent name of its own
 too, and the mode again: a `pictura` variant without `--obs_mode raster` runs in `rgb`, and
 Pictura refuses every episode.
@@ -200,8 +198,8 @@ themselves); `closed_loop.py` checks only the ones a given run reads and reports
 
 | variable | what it is |
 |---|---|
-| `HUGSIM_DATA` | the data tree (`HUGSIM-public` / `HUGSIM-private`) |
-| `HUGSIM_OUT` | where episode folders are written, or pass `--output_dir` |
+| `HUGSIM_DATA` | the tree holding `HUGSIM/` (3DRealCar, scenes, the two benchmark sets), built by [`prepare_benchmark.py`](#benchmark-sets) |
+| `HUGSIM_OUT` | where episode folders are written (`$HUGSIM_OUT/<set>/<dataset>_<agent>/`), or pass `--output_dir` |
 | `HUGSIM_AD_<NAME>` | an agent's launcher, or pass `--ad_path`; needed only for agents not in `agents/` |
 | `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)) |
 | `NUSCENES_RAW` | raw nuScenes, read only by scenarios with `load_HD_map: true` |
@@ -258,8 +256,48 @@ We've made some changes in the capturing and reloading code. If you would like t
 
 # Vehicles, Scenes and Scenarios
 
-We have released all 3DRealCar files, along with the complete set of scenes and scenarios, at [release link](https://huggingface.co/datasets/XDimLab/HUGSIM). 
-We are also holding a competition at [RealADSim @ ICCV 2025](https://huggingface.co/spaces/XDimLab/ICCV2025-RealADSim-ClosedLoop), so some scenarios and scenarios are hosted privately. We welcome participants to join!
+Upstream released all 3DRealCar files, the scenes and the scenarios at [release link](https://huggingface.co/datasets/XDimLab/HUGSIM).
+They are released in two stages, around the [RealADSim @ ICCV 2025](https://huggingface.co/spaces/XDimLab/ICCV2025-RealADSim-ClosedLoop) competition,
+and the second changed the scenarios, so a benchmark number needs to say which set it is on.
+
+## Benchmark sets
+
+| set | scenarios | what it is |
+|---|---|---|
+| `official436` (default) | nuScenes 88, PandaSet 127, KITTI-360 113, Waymo 108 | the current release (2025-10-31), the benchmark published HUGSIM numbers are on |
+| `prechallenge345` | nuScenes 87, PandaSet 51, KITTI-360 79, Waymo 128 | the release before the held-back scenes went up (2025-07-07), the protocol older papers report |
+
+The sets overlap. The 2025-10-31 release retired 94 of the 345 and moved the actors in 15 of the
+rest, so a scenario file of the same name can differ between them: each set has its own copy of every
+file. They share one scene tree (all 82 scenes) and the 3DRealCar vehicles.
+`prepare_benchmark.py` builds the layout from the two pinned Hugging Face revisions:
+
+```
+$HUGSIM_DATA/HUGSIM/3DRealCar/<id>/{gs.pth,wlh.json}
+$HUGSIM_DATA/HUGSIM/nusc_map_cache/nusc_trainval/
+$HUGSIM_DATA/HUGSIM/ss/scenes/<dataset>/<scene>/
+$HUGSIM_DATA/HUGSIM/ss/scenarios/{prechallenge345,official436}/<dataset>/<scenario>.yaml
+```
+
+```bash
+python prepare_benchmark.py --root /data/hugsim --from-hf --dry-run      # sizes (about 41 GB of scenes), nothing written
+python prepare_benchmark.py --root /data/hugsim --from-hf                # download everything
+python prepare_benchmark.py --root /data/hugsim --verify                 # counts, scenes, vehicles, repairs
+export HUGSIM_DATA=/data/hugsim
+```
+
+The release's scenarios do not run as shipped, so the script repairs them (the vehicle asset
+`<id>/postprocess/shadow.pth` becomes `<id>`, `ConstantPlanner`'s `max_t` is dropped, `start_velo:
+1R` becomes `1`); `--verify` fails on a scenario that still needs one. A one-time migration of an install from before this layout, without downloading it again, is
+`--from-install OLD_ROOT` (it links the old install's data and only fetches the two small
+`scenarios.zip` files; `--scenarios-zip-pre` / `--scenarios-zip-official` take local copies).
+
+`run_dataset.sh`, `run_all.sh` and `run_sweep.sh` take the set as their last argument
+(`official436` by default). `closed_loop.py` reads the set off the scenario's path
+(`.../ss/scenarios/<set>/<dataset>/`), so an episode lands in
+`$HUGSIM_OUT/<set>/<dataset>_<agent>/<scene>_<mode>` and a scenario that is in both sets never
+overwrites the other's run; a scenario outside those folders (`configs/benchmark/`) keeps
+`$HUGSIM_OUT/<dataset>_<agent>/`. `python get_score.py [set] [agent]` scores one set.
 
 # Scenarios configuration with GUI
 

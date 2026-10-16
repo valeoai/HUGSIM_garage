@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -8,14 +10,14 @@ import numpy as np
 # -------------------------
 # Config
 # -------------------------
-PROJECT_ROOT = Path("~/mack/yyin5/HUGSIM").expanduser()
-BENCH_ROOT = PROJECT_ROOT / "outputs" / "benchmark_drivor_mpc"  # "benchmark_new_2"
-MODEL_NAME = "dynamo_drivor_mpc_orig"  # base model name without private_ prefix
-
-# If MODEL_NAME is passed with private_ prefix, normalize to a base name.
-PRIVATE_PREFIX = "private_"
-BASE_MODEL_NAME = MODEL_NAME[len(PRIVATE_PREFIX):] if MODEL_NAME.startswith(PRIVATE_PREFIX) else MODEL_NAME
-PRIVATE_MODEL_NAME = f"{PRIVATE_PREFIX}{BASE_MODEL_NAME}"
+# Episodes are filed by closed_loop.py as $HUGSIM_OUT/<set>/<dataset>_<agent>/<scene>_<mode>.
+# Score one set per run: `python get_score.py [set] [model]`, or edit the constants.
+SCENARIO_SET = sys.argv[1] if len(sys.argv) > 1 else "official436"  # or "prechallenge345"
+MODEL_NAME = sys.argv[2] if len(sys.argv) > 2 else "dynamo_drivor_mpc_orig"  # the --ad name
+if "HUGSIM_OUT" not in os.environ:
+    raise SystemExit("HUGSIM_OUT is not set: the folder the episodes were written to (README.md, Environment)")
+BENCH_ROOT = Path(os.environ["HUGSIM_OUT"]) / SCENARIO_SET
+BASE_MODEL_NAME = MODEL_NAME
 
 DATASET_ORDER = ["kitti360", "nuscenes", "pandaset", "waymo"]
 DIFF_ORDER = ["easy", "medium", "hard", "extreme"]
@@ -73,19 +75,6 @@ def discover_dataset_roots(model_name):
         if candidate.is_dir():
             roots[ds] = [candidate]
     return roots
-
-
-def combine_root_maps(*root_maps):
-    combined = defaultdict(list)
-    for root_map in root_maps:
-        for ds, roots in root_map.items():
-            combined[ds].extend(roots)
-
-    out = {}
-    for ds in DATASET_ORDER:
-        if combined.get(ds):
-            out[ds] = combined[ds]
-    return out
 
 
 def aggregate_from_roots(dataset_roots):
@@ -345,27 +334,11 @@ def save_outputs(section_slug, stats):
 # -------------------------
 # Main
 # -------------------------
-normal_roots = discover_dataset_roots(BASE_MODEL_NAME)
-private_roots = discover_dataset_roots(PRIVATE_MODEL_NAME)
-combined_roots = combine_root_maps(normal_roots, private_roots)
+roots = discover_dataset_roots(BASE_MODEL_NAME)
 
-if not combined_roots:
-    raise SystemExit(
-        f"No dataset folders found for '{BASE_MODEL_NAME}' or '{PRIVATE_MODEL_NAME}' under {BENCH_ROOT}"
-    )
+if not roots:
+    raise SystemExit(f"No dataset folders found for '{BASE_MODEL_NAME}' under {BENCH_ROOT}")
 
-sections = [
-    ("NORMAL", "normal", normal_roots),
-    ("PRIVATE", "private", private_roots),
-    ("COMBINED", "combined", combined_roots),
-]
-
-for section_name, section_slug, roots in sections:
-    if not roots:
-        print(f"\n\n========== {section_name} ==========")
-        print("No dataset roots found. Skipping.")
-        continue
-
-    stats = aggregate_from_roots(roots)
-    print_tables(section_name, stats)
-    save_outputs(section_slug, stats)
+stats = aggregate_from_roots(roots)
+print_tables(SCENARIO_SET.upper(), stats)
+save_outputs(SCENARIO_SET, stats)
