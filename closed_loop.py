@@ -2,6 +2,7 @@ import sys
 import os
 import re
 import shutil
+import copy
 sys.path.append(os.getcwd())
 
 import gymnasium
@@ -47,7 +48,53 @@ def video_stride(video, dt):
     return 1 if video == 'full' else max(1, round(1.0 / (SPARSE_VIDEO_HZ * dt)))
 
 
-def create_gym_env(cfg, output, skip_native_eval=False, video='full'):
+class FifoAgent:
+    """The agent as a separate process, over obs_pipe and plan_pipe (README.md, Agents)."""
+
+    def __init__(self, output):
+        self.obs_pipe = os.path.join(output, 'obs_pipe')
+        self.plan_pipe = os.path.join(output, 'plan_pipe')
+        if not os.path.exists(self.obs_pipe):
+            os.mkfifo(self.obs_pipe)
+        if not os.path.exists(self.plan_pipe):
+            os.mkfifo(self.plan_pipe)
+
+    def ask(self, obs, info):
+        with open(self.obs_pipe, "wb") as pipe:
+            pipe.write(pickle.dumps((obs, info)))
+        with open(self.plan_pipe, "rb") as pipe:
+            return pickle.loads(pipe.read())
+
+    def done(self):
+        with open(self.obs_pipe, "wb") as pipe:
+            pipe.write(pickle.dumps('Done'))
+
+
+class InProcessAgent:
+    """The agent's step function, called in this process (--in_process; agents/registry.py).
+
+    It answers as it would over the pipes: agents.client.answer turns an exception into None,
+    which ends the episode as a crashed AD side does. The pipes hand each side its own copy, and
+    so does this, so neither the agent nor the simulator can reach what the other keeps.
+    """
+
+    def __init__(self, ad, output, device):
+        from agents.registry import load_in_process
+        self.ad, self.output, self.count = ad, output, 0
+        self.step, self.on_done = load_in_process(ad, output, device)
+
+    def ask(self, obs, info):
+        from agents.client import answer
+        reply = answer(self.step, *copy.deepcopy((obs, info)), self.output, self.ad, self.count)
+        self.count += 1
+        return copy.deepcopy(reply)
+
+    def done(self):
+        if self.on_done is not None:
+            self.on_done()
+
+
+def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full'):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -57,12 +104,6 @@ def create_gym_env(cfg, output, skip_native_eval=False, video='full'):
     cnt = 0
     save_data = {'type': 'closeloop', 'frames': []}
 
-    obs_pipe = os.path.join(output, 'obs_pipe')
-    plan_pipe = os.path.join(output, 'plan_pipe')
-    if not os.path.exists(obs_pipe):
-        os.mkfifo(obs_pipe)
-    if not os.path.exists(plan_pipe):
-        os.mkfifo(plan_pipe)
     print('Ready for simulation')
 
     stride = video_stride(video, cfg.kinematic.dt)
@@ -90,10 +131,7 @@ def create_gym_env(cfg, output, skip_native_eval=False, video='full'):
             )
         )
 
-        with open(obs_pipe, "wb") as pipe:
-            pipe.write(pickle.dumps((obs, info)))
-        with open(plan_pipe, "rb") as pipe:
-            plan_traj = pickle.loads(pipe.read())
+        plan_traj = agent.ask(obs, info)
         # An AD side may also move the ego itself: a dict carrying the plan (still what is
         # scored) plus the displacement to apply this step. an AD side does this to drive with its
         # own vehicle model instead of through the iLQR tracker. A bare array is a plan to track.
@@ -155,8 +193,7 @@ def create_gym_env(cfg, output, skip_native_eval=False, video='full'):
         else:  # AD Side Crushed
             done = True
 
-    with open(obs_pipe, "wb") as pipe:
-        pipe.write(pickle.dumps('Done'))
+    agent.done()
 
     with open(os.path.join(output, 'data.pkl'), 'wb') as wf:
         pickle.dump([save_data], wf)
@@ -259,7 +296,16 @@ if __name__ == "__main__":
         help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
              "still written, so the episode can be scored offline",
     )
+    parser.add_argument(
+        "--in_process",
+        action="store_true",
+        help="call the agent's step function in this process instead of launching it over the "
+             "pipes: only for agents that run in this environment, listed in agents/registry.py. "
+             "The agent uses this process's GPU; --ad_cuda and --ad_path do not apply",
+    )
     args = parser.parse_args()
+    if args.in_process and args.ad_path is not None:
+        raise SystemExit("--in_process calls the agent from agents/registry.py; it takes no --ad_path")
 
     scenario_config = OmegaConf.load(args.scenario_path)
     base_config = OmegaConf.load(args.base_path)
@@ -275,7 +321,7 @@ if __name__ == "__main__":
     needed = ['realcar_path', 'model_base']
     if args.output_dir is None:
         needed.append('output_dir')
-    if args.ad_path is None and ad_key in cfg.base:
+    if args.ad_path is None and not args.in_process and ad_key in cfg.base:
         needed.append(ad_key)
     if scenario_config.get('load_HD_map', False):
         needed.append('HD_map.path')
@@ -318,44 +364,60 @@ if __name__ == "__main__":
     output = os.path.join(cfg.base.output_dir, cfg.scenario.scene_name+"_"+cfg.scenario.mode)
     os.makedirs(output, exist_ok=True)
 
-    # base.<ad>_path by convention, or --ad_path. 'dynamo*' variants share one launcher.
-    if args.ad_path is not None:
-        ad_path, source = args.ad_path, '--ad_path'
+    if args.in_process:
+        try:
+            # Loaded before the episode starts, so a missing checkpoint or an unknown name stops
+            # the run here rather than inside it.
+            agent = InProcessAgent(args.ad, output, device='cuda')
+        except (KeyError, FileNotFoundError, ImportError) as e:
+            raise SystemExit(f"--in_process --ad {args.ad}: {e}")
     else:
-        env_var = f"HUGSIM_AD_{args.ad.upper()}"
-        if ad_key in cfg.base:
-            ad_path, source = cfg.base[ad_key], f'base.{ad_key}'
-        elif env_var in os.environ:
-            ad_path, source = os.environ[env_var], env_var    # an agent the shipped config does not list
+        # base.<ad>_path by convention, or --ad_path. 'dynamo*' variants share one launcher.
+        if args.ad_path is not None:
+            ad_path, source = args.ad_path, '--ad_path'
         else:
-            raise SystemExit(
-                f"no launcher for --ad {args.ad}: pass --ad_path, export {env_var}, or add "
-                f"base.{ad_key}. Listed: {sorted(k for k in cfg.base if k.endswith('_path'))}")
-    # The shipped agents' launchers are in-repo paths (agents/...): one the cwd does not hold is
-    # taken relative to this checkout, so a run started elsewhere still finds them.
-    if ad_path and '/' in ad_path and not os.path.isabs(ad_path) and not os.path.isfile(ad_path):
-        repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ad_path)
-        if os.path.isfile(repo_path):
-            ad_path = repo_path
-    # bash reads the launcher from that file, relative to the cwd, or for a bare name from PATH.
-    # Given anything else it exits at once, and the episode waits on obs_pipe for no one.
-    if not ad_path or not (os.path.isfile(ad_path)
-                           or ('/' not in ad_path and shutil.which(ad_path, mode=os.F_OK))):
-        raise SystemExit(f"the launcher for --ad {args.ad} is {ad_path!r}, from {source}: not a file")
+            env_var = f"HUGSIM_AD_{args.ad.upper()}"
+            if ad_key in cfg.base:
+                ad_path, source = cfg.base[ad_key], f'base.{ad_key}'
+            elif env_var in os.environ:
+                ad_path, source = os.environ[env_var], env_var    # an agent the shipped config does not list
+            else:
+                raise SystemExit(
+                    f"no launcher for --ad {args.ad}: pass --ad_path, export {env_var}, or add "
+                    f"base.{ad_key}. Listed: {sorted(k for k in cfg.base if k.endswith('_path'))}")
+        # The shipped agents' launchers are in-repo paths (agents/...): one the cwd does not hold is
+        # taken relative to this checkout, so a run started elsewhere still finds them.
+        if ad_path and '/' in ad_path and not os.path.isabs(ad_path) and not os.path.isfile(ad_path):
+            repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ad_path)
+            if os.path.isfile(repo_path):
+                ad_path = repo_path
+        # bash reads the launcher from that file, relative to the cwd, or for a bare name from PATH.
+        # Given anything else it exits at once, and the episode waits on obs_pipe for no one.
+        if not ad_path or not (os.path.isfile(ad_path)
+                               or ('/' not in ad_path and shutil.which(ad_path, mode=os.F_OK))):
+            raise SystemExit(f"the launcher for --ad {args.ad} is {ad_path!r}, from {source}: not a file")
 
     # Files an earlier run left in the reused episode folder that this run may not rewrite:
     # eval.json when it is refused or passes --skip-native-eval, video.mp4 with --video off.
     for name in ('eval.json', 'video.mp4'):
         if os.path.exists(os.path.join(output, name)):
             os.remove(os.path.join(output, name))
-    process = launch(ad_path, args.ad_cuda, output)
-    try:
-        create_gym_env(cfg, output, skip_native_eval=args.skip_native_eval, video=video)
-        check_alive(process)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        process.kill()
+    if args.in_process:
+        try:
+            create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    else:
+        process = launch(ad_path, args.ad_cuda, output)
+        try:
+            create_gym_env(cfg, output, FifoAgent(output), skip_native_eval=args.skip_native_eval,
+                           video=video)
+            check_alive(process)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            process.kill()
     
     # For debug
     # create_gym_env(cfg, output)
