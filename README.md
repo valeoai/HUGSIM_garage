@@ -289,8 +289,8 @@ Here is a video for the GUI usage demonstration: [GUI Video](https://github.com/
 **The AD clients are in [`agents/`](agents/README.md)**, vendored from upstream's
 [UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM)
 and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, GTRS, ZTRS and GTRS-Aug run in
-the pixi environment above; UniAD and VAD need the environment in `agents/mmdet3d/` (one
-`pixi install` and two build tasks, [agents/mmdet3d/README.md](agents/mmdet3d/README.md)). All of
+the pixi environment above; UniAD and VAD need the environment in `agents/_mmdet3d/` (one
+`pixi install` and two build tasks, [agents/_mmdet3d/README.md](agents/_mmdet3d/README.md)). All of
 them read their weights from `HUGSIM_AGENT_CKPTS`.
 
 In **closed_loop.py**, we automatically launch autonomous driving algorithms.

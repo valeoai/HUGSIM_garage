@@ -7,20 +7,25 @@ bring an environment of their own.
 
 | `--ad` | model | code | environment | in-process |
 |---|---|---|---|---|
-| `uniad` | UniAD (base, e2e) | `mmdet3d/uniad/` | `mmdet3d/pixi.toml` | no |
-| `vad` | VAD (base) | `mmdet3d/vad/` | `mmdet3d/pixi.toml` | no |
-| `ltf` | Latent TransFuser | `navsim/transfuser/` | the simulator's | yes |
-| `drivor` | DrivoR (4 cameras, CEM refinement) | `navsim/drivor/` | the simulator's | yes |
-| `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `navsim/gtrs/` | the simulator's | yes |
-| `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `navsim/ztrs/` | the simulator's | yes |
-| `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `navsim/gtrs_aug/` | the simulator's | yes |
+| `uniad` | UniAD (base, e2e) | `uniad/` | `_mmdet3d/pixi.toml` | no |
+| `vad` | VAD (base) | `vad/` | `_mmdet3d/pixi.toml` | no |
+| `ltf` | Latent TransFuser | `ltf/` | the simulator's | yes |
+| `drivor` | DrivoR (4 cameras, CEM refinement) | `drivor/` | the simulator's | yes |
+| `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `gtrs/` | the simulator's | yes |
+| `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `ztrs/` | the simulator's | yes |
+| `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
 
 UniAD and VAD are built from mmcv 1.x registries and call its compiled CUDA ops (deformable
 attention, DCNv2), so they keep that stack, in a pixi workspace of their own: see
-[mmdet3d/README.md](mmdet3d/README.md) for the build (about 13 minutes) and the launchers. The
+[_mmdet3d/README.md](_mmdet3d/README.md) for the build (about 13 minutes) and the launchers. The
 NAVSIM-family agents only ever needed NAVSIM's environment for imports (nuplan-devkit, hydra,
-pytorch_lightning), not for anything they compute; `navsim/` holds their inference path alone.
-Where each file came from: [navsim/NOTICE.md](navsim/NOTICE.md), [mmdet3d/NOTICE.md](mmdet3d/NOTICE.md).
+pytorch_lightning), not for anything they compute; their folders hold their inference path alone.
+Every agent is a folder named like its `--ad` name and like its checkpoint folder
+`$HUGSIM_AGENT_CKPTS/<name>/`, with a `launch.sh` and a `NOTICE.md` (where each file came from). The code
+the NAVSIM-family agents share is in `_navsim/` (`NOTICE.md` there too; each agent's `spec.py` is what
+distinguishes it), the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
+imports another, so deleting one leaves the rest working (`agents/LICENSE` is the Apache-2.0 text of the
+NAVSIM-family code).
 
 `drivor` is the agent NAVSIM's `dynamo_e2e.sh` launched: that script loads DrivoR
 (`CONFIG_NAME = "drivor"`), not Dynamo. `dynamo` stays an external launcher (`HUGSIM_AD_DYNAMO`).
@@ -103,7 +108,7 @@ What changed: a step that fails is answered `None` (the episode ends) instead of
 |---|---|
 | `HUGSIM_AGENT_CKPTS` | checkpoint root, required |
 | `HUGSIM_AGENT_PYTHON` | python for the NAVSIM-family launchers (default: the simulator's) |
-| `HUGSIM_MMDET3D_PYTHON` | python of an environment you manage, for UniAD and VAD (default: `pixi run` in `mmdet3d/`); `PIXI` names the pixi binary |
+| `HUGSIM_MMDET3D_PYTHON` | python of an environment you manage, for UniAD and VAD (default: `pixi run` in `_mmdet3d/`); `PIXI` names the pixi binary |
 | `HUGSIM_AGENT_DEVICE` | `cuda` (default) or `cpu`, NAVSIM family |
 | `HUGSIM_AGENT_SEED` | seed the step, NAVSIM family |
 | `HUGSIM_VAD_EVAL=1` | VAD in eval mode |
@@ -127,7 +132,7 @@ listed in `registry.py`, which makes `--in_process` available to it.
 ## Checking a port
 
 `tools/record.py` is an agent that saves every `(obs, info)` the simulator sends and drives a
-straight plan; `navsim`'s `tools/plans.py` and `mmdet3d/plans.py` replay those frames through
+straight plan; `tools/plans.py` (NAVSIM family) and `_mmdet3d/plans.py` replay those frames through
 an agent offline. That is how each agent here was checked against its original client: on 16
 frames of nuScenes scene-0383 easy, GTRS, ZTRS, GTRS-Aug, UniAD and VAD give the same plans to the
 bit, LTF and DrivoR within 2e-5 m, with the same proposal chosen on every frame.

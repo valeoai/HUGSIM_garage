@@ -1,19 +1,15 @@
 """Agents that closed_loop.py can run in the simulator's process (``--in_process``).
 
-Maps an agent name to ``(module, agent argument)``: the module defines ``make_step(agent,
-episode_dir, device, ckpt_root=None) -> (step, on_done)``. Nothing heavy is imported here; the
-module is imported by :func:`load_in_process`.
+The in-process agents are the NAVSIM family (``agents._navsim.AGENTS``); ``agents._navsim.run``
+defines ``make_step(agent, episode_dir, device, ckpt_root=None) -> (step, on_done)``. Nothing heavy
+is imported here; the module is imported by :func:`load_in_process`.
 """
 
 import importlib
 
-IN_PROCESS = {
-    'ltf': ('agents.navsim.run', 'ltf'),
-    'drivor': ('agents.navsim.run', 'drivor'),
-    'gtrs': ('agents.navsim.run', 'gtrs'),
-    'ztrs': ('agents.navsim.run', 'ztrs'),
-    'gtrs_aug': ('agents.navsim.run', 'gtrs_aug'),
-}
+from ._navsim import AGENTS
+
+IN_PROCESS = {name: ('agents._navsim.run', name) for name in AGENTS}
 
 
 def load_in_process(name, episode_dir, device='cuda'):

@@ -6,7 +6,7 @@
 stepped in that order (an agent sees the frames as the simulator would send them) and the plans
 are saved as ``plan_0000`` ... in ``--out``, each ``(N, 2)`` ``(right, forward)``, with
 ``choice_0000`` ... the discrete choice behind each (the scorer's proposal or vocabulary index; empty for LTF). This uses the
-same ``Policy.step`` as ``python -m agents.navsim.run``. ``--seed`` seeds torch before each frame
+same ``Policy.step`` as ``python -m agents._navsim.run``. ``--seed`` seeds torch before each frame
 (``seed + frame index``) so that DrivoR's CEM sampling is repeatable; ``--seed -1`` leaves it
 unseeded, as the simulator-facing launcher does.
 """
@@ -20,8 +20,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from agents.navsim.policy import AGENTS  # noqa: E402
-from agents.navsim.run import make_step  # noqa: E402
+from agents._navsim import AGENTS  # noqa: E402
+from agents._navsim.run import make_step  # noqa: E402
 
 
 def run(agent, frames, ckpt_root=None, device=None, seed=0):

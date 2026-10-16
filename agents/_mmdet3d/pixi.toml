@@ -1,0 +1,94 @@
+# Environment of the UniAD and VAD agents (agents/uniad, agents/vad; the environment lives in
+# agents/_mmdet3d). Separate from the simulator's pixi workspace at the
+# repo root: this stack is the 2022-23 mmlab one (mmcv 1.x, mmdet 2.x, mmdet3d 1.0.0rc6), which needs its own torch and CUDA toolchain.
+#
+#   pixi install --manifest-path agents/_mmdet3d/pixi.toml
+#   pixi run --manifest-path agents/_mmdet3d/pixi.toml install-mmcv      # compiles CUDA ops, slow
+#   pixi run --manifest-path agents/_mmdet3d/pixi.toml install-mmdet3d   # compiles CUDA ops
+#
+# The two compiled packages are not in the lock file (pixi cannot build them: they need torch and
+# nvcc in the environment first, which is what `no-build-isolation` means in the root pixi.toml
+# too), so they are tasks; their versions are pinned below and in install_mmdet3d.sh.
+#
+# CUDA: nvcc, the headers and the CUDA libraries the extensions link come from conda-forge, so
+# the build does not look at /usr/local/cuda. They are 12.3 while torch's wheels are cu121:
+# conda-forge's 12.1 and 12.2 `fatbinary` (a static non-PIE binary) segfault on this node, which
+# fails every nvcc compile; 12.3 is the oldest that runs. Only the major version has to match
+# torch's (cpp_extension checks it), and at run time the libraries are the ones in torch's wheels.
+# gcc 11 is inside nvcc 12.3's supported range. TORCH_CUDA_ARCH_LIST covers V100 (7.0),
+# RTX 2080 Ti (7.5), A100 (8.0), RTX 30xx (8.6) and H100/H200 (9.0).
+
+[workspace]
+name = "hugsim-mmdet3d-agents"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[dependencies]
+python = "3.9.*"
+pip = "*"
+setuptools = "<70"
+wheel = "*"
+ninja = "*"
+git = "*"
+gxx_linux-64 = "11.*"
+gcc_linux-64 = "11.*"
+cuda-nvcc = "12.3.*"
+cuda-libraries-dev = "12.3.*"
+cuda-cccl_linux-64 = "12.3.*"
+cuda-driver-dev = "12.3.*"
+
+[activation.env]
+CUDA_HOME = "$CONDA_PREFIX"
+CC = "$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
+CXX = "$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
+CUDAHOSTCXX = "$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
+CPATH = "$CONDA_PREFIX/targets/x86_64-linux/include"
+LIBRARY_PATH = "$CONDA_PREFIX/targets/x86_64-linux/lib:$CONDA_PREFIX/lib"
+TORCH_CUDA_ARCH_LIST = "7.0;7.5;8.0;8.6;9.0"
+# pip wheels (torch, numpy) find no libstdc++ of their own and load the system one first, which
+# is older than the conda libicu/libsqlite3 that `import sqlite3` (via IPython, imported by
+# UniAD's plugin) needs. Loading the environment's first makes both agree.
+LD_PRELOAD = "$CONDA_PREFIX/lib/libstdc++.so.6"
+
+[tasks]
+install-mmcv = { cmd = "pip install -v --no-build-isolation --no-deps --no-cache-dir mmcv-full==1.7.2", env = { MMCV_WITH_OPS = "1", FORCE_CUDA = "1", MAX_JOBS = "24" } }
+install-mmdet3d = { cmd = "bash install_mmdet3d.sh", env = { FORCE_CUDA = "1", MAX_JOBS = "24" } }
+
+[pypi-dependencies]
+torch = { version = "==2.1.2", index = "https://download.pytorch.org/whl/cu121" }
+torchvision = { version = "==0.16.2", index = "https://download.pytorch.org/whl/cu121" }
+numpy = "<1.24"
+scipy = "<1.12"
+shapely = "<2"
+casadi = "==3.5.5"
+einops = "*"
+timm = "<1"
+opencv-python-headless = "<4.10"
+pillow = "<11"
+matplotlib = "<3.8"
+pyquaternion = "*"
+scikit-image = "<0.22"
+scikit-learn = "<1.4"
+numba = "==0.57.1"
+nuscenes-devkit = "==1.1.11"
+mmdet = "==2.28.2"
+mmsegmentation = "==0.30.0"
+addict = "*"
+yapf = "==0.40.1"
+terminaltables = "*"
+pycocotools = "*"
+plyfile = "*"
+trimesh = "==2.35.39"
+networkx = "<2.7"
+tqdm = "*"
+pyyaml = "*"
+packaging = "*"
+tensorboard = "*"
+pandas = "<2"
+# imported at module level by the plugin trees (dataset and metric code that is never run here)
+motmetrics = "==1.1.3"
+descartes = "*"
+ipython = "<9"
+pytorch-lightning = "==1.2.5"
+torchmetrics = "==0.11.4"
