@@ -2,7 +2,7 @@
 
 HUGSIM_garage itself is MIT-licensed (see the repository `LICENSE`). The files here are shared by the
 NAVSIM-family agents (`ltf/`, `drivor/`, `gtrs/`, `ztrs/`, `gtrs_aug/`), adapted from the Apache-2.0
-projects below, and keep that licence (`../LICENSE` is the Apache-2.0 text). Each file's docstring names
+projects below, and keep that licence (`LICENSE` here is the Apache-2.0 text). Each file's docstring names
 its origin. Changes are limited to what running inference inside HUGSIM's environment needs: the nuplan
 devkit, hydra, Lightning, ray and every training-only code path are removed. Each agent's own files,
 and where they come from, are in its folder's `NOTICE.md`.

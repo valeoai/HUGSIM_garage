@@ -142,9 +142,10 @@ at its first step: it says why in its log (its stdout and stderr go to the episo
 `output.txt`) and answers `None` on `plan_pipe`. `closed_loop.py` then ends the episode and
 sends `'Done'`. The episode folder has no `eval.json` and its `data.pkl` holds no frames, so
 `get_score.py` lists the scenario as missing; `closed_loop.py` still exits 0. An agent must
-answer, and then read that `'Done'`: one that raises or exits instead leaves `closed_loop.py`
-blocked on a pipe until something kills it, since nothing watches the agent's process during
-the episode.
+answer, and then read that `'Done'`. One that exits instead is caught: `closed_loop.py` watches
+the launcher's process, releases the pipe it waits on, and ends the episode with an error naming
+the agent's exit code and `output.txt` (agents/client.py's `serve` keeps both promises for the
+agents in `agents/`).
 
 Neither abstract mode renders the cameras each step. Before the modes, an agent on the export
 still had all six cameras rendered and piped to it every step, and it never read them. The

@@ -8,7 +8,6 @@ from .._navsim.parse import parse_gtrs
 from .._navsim.policy import AgentSpec
 
 
-
 def _gtrs_aug_choice(output):
     """The first-stage vocabulary index and the one the refinement stage finally picked."""
     refinement = output['refinement'][-1]
