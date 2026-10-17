@@ -1,10 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# The scenarios come from, and the episodes go to, the same roots closed_loop.py reads.
-: "${HUGSIM_DATA:?HUGSIM_DATA is not set: the tree prepare_benchmark.py built (README.md, Environment)}"
-: "${HUGSIM_OUT:?HUGSIM_OUT is not set: where episode folders are written (README.md, Environment)}"
-
 usage() {
     echo "Usage: $0 <agent_name> <dataset> <sim_cuda> <ad_cuda> [scenario_order] [set]"
     echo "  scenario_order: forward (default) or reverse -- run two workers from opposite"
@@ -41,6 +37,10 @@ if [ "${scenario_order}" != "forward" ] && [ "${scenario_order}" != "reverse" ];
     echo "Error: scenario_order must be either 'forward' or 'reverse'."
     usage; exit 1
 fi
+
+# The scenarios come from, and the episodes go to, the same roots closed_loop.py reads.
+: "${HUGSIM_DATA:?HUGSIM_DATA is not set: the tree prepare_benchmark.py built (README.md, Environment)}"
+: "${HUGSIM_OUT:?HUGSIM_OUT is not set: where episode folders are written (README.md, Environment)}"
 
 read -r -d '' -a hugsim_args <<< "${HUGSIM_ARGS-}" || true
 # The skip below looks for eval.json in the folder --ad, --base_path, --scenario_path and --output_dir

@@ -6,16 +6,25 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 # -------------------------
 # Config
 # -------------------------
 # Episodes are filed by closed_loop.py as $HUGSIM_OUT/<set>/<dataset>_<agent>/<scene>_<mode>.
-# Score one set per run: `python get_score.py [set] [model]`, or edit the constants.
-SCENARIO_SET = sys.argv[1] if len(sys.argv) > 1 else "official436"  # or "prechallenge345"
-MODEL_NAME = sys.argv[2] if len(sys.argv) > 2 else "dynamo_drivor_mpc_orig"  # the --ad name
-if "HUGSIM_OUT" not in os.environ:
-    raise SystemExit("HUGSIM_OUT is not set: the folder the episodes were written to (README.md, Environment)")
+# Score one set per run: `python get_score.py <set> <model>`, e.g. `official436 pictura_vector`
+# (the --ad name). Only the episodes that are scenarios of the set count; see expected_episodes.
+USAGE = "Usage: python get_score.py <set> <model>   (set: a folder under $HUGSIM_DATA/HUGSIM/ss/scenarios)"
+if len(sys.argv) != 3:
+    raise SystemExit(USAGE)
+SCENARIO_SET, MODEL_NAME = sys.argv[1], sys.argv[2]
+for _var in ("HUGSIM_OUT", "HUGSIM_DATA"):
+    if _var not in os.environ:
+        raise SystemExit(f"{_var} is not set (README.md, Environment)\n{USAGE}")
+SCENARIO_ROOT = Path(os.environ["HUGSIM_DATA"]) / "HUGSIM" / "ss" / "scenarios"
+if not (SCENARIO_ROOT / SCENARIO_SET).is_dir():
+    sets = sorted(p.name for p in SCENARIO_ROOT.glob("*") if p.is_dir()) if SCENARIO_ROOT.is_dir() else []
+    raise SystemExit(f"'{SCENARIO_SET}' is not a set under {SCENARIO_ROOT} (found: {sets})\n{USAGE}")
 BENCH_ROOT = Path(os.environ["HUGSIM_OUT"]) / SCENARIO_SET
 BASE_MODEL_NAME = MODEL_NAME
 
@@ -68,6 +77,16 @@ def fmt(v):
     return "" if v is None or np.isnan(v) else f"{v:.4f}"
 
 
+def expected_episodes(ds):
+    """The episode folder names ``{scene_name}_{mode}`` of the set's scenarios of ``ds``, as
+    closed_loop.py names them."""
+    names = set()
+    for path in sorted((SCENARIO_ROOT / SCENARIO_SET / ds).glob("*.yaml")):
+        cfg = yaml.safe_load(path.read_text())
+        names.add(f"{cfg['scene_name']}_{cfg['mode']}")
+    return names
+
+
 def discover_dataset_roots(model_name):
     roots = {}
     for ds in DATASET_ORDER:
@@ -75,6 +94,10 @@ def discover_dataset_roots(model_name):
         if candidate.is_dir():
             roots[ds] = [candidate]
     return roots
+
+
+def ds_root_of(roots):
+    return roots[0]
 
 
 def aggregate_from_roots(dataset_roots):
@@ -94,6 +117,7 @@ def aggregate_from_roots(dataset_roots):
     per_dataset_diff_details = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
 
     missing_per_dataset = defaultdict(list)
+    ignored_per_dataset = defaultdict(list)
     present_per_dataset = defaultdict(list)
     all_eval_files = []
 
@@ -105,7 +129,13 @@ def aggregate_from_roots(dataset_roots):
         for ds_root in roots:
             scene_dirs.extend([p for p in ds_root.iterdir() if p.is_dir()])
 
-        for scene_dir in sorted(scene_dirs, key=lambda p: str(p)):
+        expected = expected_episodes(ds)
+        by_name = {p.name: p for p in scene_dirs}
+        ignored_per_dataset[ds] = [p for n, p in sorted(by_name.items()) if n not in expected]
+        # A scenario never run has no folder at all; it counts as missing like one without eval.json.
+        scene_dirs = [by_name.get(n, ds_root_of(roots) / n) for n in sorted(expected)]
+
+        for scene_dir in scene_dirs:
             eval_fp = scene_dir / "eval.json"
             diff_match = DIFF_RE.search(scene_dir.name)
             diff = diff_match.group(1).lower() if diff_match else "unknown"
@@ -181,6 +211,7 @@ def aggregate_from_roots(dataset_roots):
         "dataset_roots": dataset_roots,
         "eval_files": all_eval_files,
         "missing_per_dataset": missing_per_dataset,
+        "ignored_per_dataset": ignored_per_dataset,
         "present_per_dataset": present_per_dataset,
         "averages": {
             "global": global_means,
@@ -262,7 +293,7 @@ def print_tables(section_name, stats):
     row = [fmt(get_global_mean(stats, key)) for key, _ in SCORE_KEYS]
     print("\n".join(row))
 
-    print("\n=== Folders missing eval.json (per dataset) ===")
+    print("\n=== Episodes of the set missing (no folder, or no eval.json), per dataset ===")
     total_missing = 0
     for ds in DATASET_ORDER:
         missing = stats["missing_per_dataset"].get(ds, [])
@@ -271,8 +302,19 @@ def print_tables(section_name, stats):
         for d in missing:
             print(f"  {d}")
 
+    print("\n=== Folders not scenarios of this set (ignored) ===")
+    total_ignored = 0
+    for ds in DATASET_ORDER:
+        ignored = stats["ignored_per_dataset"].get(ds, [])
+        total_ignored += len(ignored)
+        if ignored:
+            print(f"\n[{ds}]  ignored: {len(ignored)}")
+            for d in ignored:
+                print(f"  {d}")
+
     print(f"\nTotal eval.json files found: {len(stats['eval_files'])}")
-    print(f"Total missing folders: {total_missing}")
+    print(f"Total missing episodes: {total_missing}")
+    print(f"Total ignored folders: {total_ignored}")
 
 
 def save_outputs(section_slug, stats):
@@ -317,6 +359,9 @@ def save_outputs(section_slug, stats):
         "dataset_roots": {ds: [str(p) for p in stats["dataset_roots"].get(ds, [])] for ds in DATASET_ORDER},
         "averages": stats["averages"],
         "details": stats["details"],
+        "ignored_folders": {
+            ds: [str(p) for p in stats["ignored_per_dataset"].get(ds, [])] for ds in DATASET_ORDER
+        },
         "missing_folders": {
             ds: [str(p) for p in stats["missing_per_dataset"].get(ds, [])] for ds in DATASET_ORDER
         },

@@ -36,7 +36,7 @@ NAVSIM-family code).
 export HUGSIM_AGENT_CKPTS=/path/to/hugsim_agent_ckpts      # see Checkpoints
 python closed_loop.py --scenario_path ... --base_path ./configs/sim/nuscenes_base.yaml \
     --camera_path ./configs/sim/nuscenes_camera.yaml --kinematic_path ./configs/sim/kinematic.yaml \
-    --ad gtrs --output_dir /where/episodes/go
+    --ad gtrs --output_dir /where/episodes/go/nuscenes_
 ```
 
 The shipped configs launch each agent from here (`base.<ad>_path:
