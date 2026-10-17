@@ -153,12 +153,17 @@ class HUGSimEnv(gymnasium.Env):
         semantic_idx = torch.argmax(self.gaussians.get_full_3D_features, dim=-1, keepdim=True)
         ground_xyz = self.gaussians.get_full_xyz[(semantic_idx == 0)[:, 0]].detach().cpu().numpy()
         scene_xyz = self.gaussians.get_full_xyz[((semantic_idx > 1) & (semantic_idx != 10))[:, 0]].detach().cpu().numpy()
-        ground_pcd = o3d.geometry.PointCloud()
-        ground_pcd.points = o3d.utility.Vector3dVector(ground_xyz.astype(float))
-        o3d.io.write_point_cloud(os.path.join(output, 'ground.ply'), ground_pcd)
-        scene_pcd = o3d.geometry.PointCloud()
-        scene_pcd.points = o3d.utility.Vector3dVector(scene_xyz.astype(float))
-        o3d.io.write_point_cloud(os.path.join(output, 'scene.ply'), scene_pcd)
+        # The scene's ground and scene clouds (world frame), kept for the scorers. They are written
+        # into the episode folder unless base.write_point_clouds is false: closed_loop.py's
+        # --outputs scoring writes only the part of them an episode's scorers can reach.
+        self.ground_xyz, self.scene_xyz = ground_xyz.astype(float), scene_xyz.astype(float)
+        if cfg.base.get('write_point_clouds', True):
+            ground_pcd = o3d.geometry.PointCloud()
+            ground_pcd.points = o3d.utility.Vector3dVector(self.ground_xyz)
+            o3d.io.write_point_cloud(os.path.join(output, 'ground.ply'), ground_pcd)
+            scene_pcd = o3d.geometry.PointCloud()
+            scene_pcd.points = o3d.utility.Vector3dVector(self.scene_xyz)
+            o3d.io.write_point_cloud(os.path.join(output, 'scene.ply'), scene_pcd)
 
         if cfg.scenario.load_HD_map:
             self.planner.update_agent_route()

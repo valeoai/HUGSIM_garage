@@ -221,11 +221,13 @@ def _finite(xyz):
     return xyz[np.isfinite(xyz).all(axis=1)]
 
 
-def score_episode(ep_dir, scene_dir):
+def score_episode(ep_dir, scene_dir, clouds=None):
     """The realized score of one finished episode (see the module docstring).
 
     ``ep_dir`` holds what HUGSIM saved (data.pkl, scene.ply, ground.ply); ``scene_dir`` is the
-    reconstructed scene, for its recorded camera track. None when fewer than two frames were driven.
+    reconstructed scene, for its recorded camera track. ``clouds`` is ``(ground, scene)``, the two
+    world-frame (n, 3) arrays of ground.ply and scene.ply, when the caller holds them already (they
+    are read from ``ep_dir`` otherwise). None when fewer than two frames were driven.
     """
     data = pickle.load(open(os.path.join(ep_dir, "data.pkl"), "rb"))[0]
     frames = data["frames"]
@@ -238,9 +240,9 @@ def score_episode(ep_dir, scene_dir):
     # Keep only the scene points near the drive; the checks never look further than ~25 m.
     # The clouds are saved in the world (camera) frame; convert to the sim frame exactly as
     # hugsim_evaluate does before scoring.
-    raw = load_ply_xyz(os.path.join(ep_dir, "scene.ply"))
+    raw = load_ply_xyz(os.path.join(ep_dir, "scene.ply")) if clouds is None else np.asarray(clouds[1])
     scene_xyz = _finite(np.stack([raw[:, 2], -raw[:, 0], -raw[:, 1]], axis=1))
-    raw = load_ply_xyz(os.path.join(ep_dir, "ground.ply"))
+    raw = load_ply_xyz(os.path.join(ep_dir, "ground.ply")) if clouds is None else np.asarray(clouds[0])
     ground_xyz = _finite(np.stack([raw[:, 2], -raw[:, 0], np.zeros(len(raw))], axis=1))
     tree = cKDTree(ego[:, :2])
     near = tree.query(scene_xyz[:, :2], distance_upper_bound=30.0)[0] < np.inf

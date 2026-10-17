@@ -233,6 +233,20 @@ as `{"too_short": true}`. An agent that exits outright ends the episode before a
 so that episode has no score file at all. `score_realized.py` keeps a cached score only while it
 matches the episode's `data.pkl`, and retries everything else on every pass.
 
+`--outputs scoring` makes an episode write only what scoring needs. Each episode folder normally
+carries `ground.ply` (~11 MB) and `scene.ply` (~31 MB), the scene's Gaussians by semantics, a property
+of the scene rather than the episode, plus `infos.pkl` and a ~9 MB `video.mp4`. Both scorers only ask
+point questions about the ego's box at poses known from `data.pkl` (the planned poses and the
+poses displaced by velocity x 0.5 s and 1.0 s for HUGSIM's, the recorded poses and their 0.2 s
+propagations to 1 s for the realized one), so `sim/utils/score_corridor.py` keeps the points within
+half the footprint diagonal plus 0.5 m of those poses (~3 MB) and nothing else can change a score.
+With `--outputs scoring` the env writes no clouds, there is no `infos.pkl`, `--video` defaults to
+`off` (an explicit `--video` wins), the cropped clouds are written as `ground.ply` / `scene.ply` (so
+`score_realized.py` still rescores the folder), and both scorers run on those in-memory arrays. The
+scores are identical to `--outputs full`, the default, which writes everything as before. HUGSIM's
+drivable-area check also looks only at the ground points near each waypoint (`FAST_SCORING` in
+`score_calculator.py`, exact; set it to `False` for the original full-cloud loop).
+
 ## Environment
 
 The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read

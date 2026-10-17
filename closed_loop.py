@@ -20,6 +20,7 @@ from omegaconf import OmegaConf
 import open3d as o3d
 from sim.utils.score_calculator import hugsim_evaluate
 from sim.utils.realized_score import read_crash_marker, score_episode
+from sim.utils.score_corridor import crop_episode
 import numpy as np
 from moviepy import ImageSequenceClip
 
@@ -141,7 +142,13 @@ class InProcessAgent:
                 traceback.print_exc()
 
 
-def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False):
+def write_cloud(path, xyz):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(np.asarray(xyz, dtype=float))
+    o3d.io.write_point_cloud(path, pcd)
+
+
+def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full'):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -249,8 +256,18 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
 
     if observations_save:
         to_video(observations_save, os.path.join(output, 'video.mp4'), fps=1.0 / (stride * cfg.kinematic.dt))
-    with open(os.path.join(output, 'infos.pkl'), 'wb') as wf:
-        pickle.dump(infos_save, wf)
+    if outputs == 'full':
+        with open(os.path.join(output, 'infos.pkl'), 'wb') as wf:
+            pickle.dump(infos_save, wf)
+
+    # --outputs scoring: the env wrote no clouds (base.write_point_clouds). Keep the corridor of
+    # this episode's data in ground.ply / scene.ply, which is all the scorers (and score_realized.py,
+    # offline) can look at, and score on those same arrays rather than reading them back.
+    clouds = None
+    if outputs == 'scoring' and save_data['frames']:
+        clouds = crop_episode(save_data['frames'], env.unwrapped.ground_xyz, env.unwrapped.scene_xyz)
+        write_cloud(os.path.join(output, 'ground.ply'), clouds[0])
+        write_cloud(os.path.join(output, 'scene.ply'), clouds[1])
     
     # The native scorer reads the two point clouds back and checks every frame against them: it is
     # ~69 s of the ~525 s an episode costs here, far more than the drive's own tail. A sweep that
@@ -262,8 +279,11 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         # HUGSIM's scorer raises on some episodes (no frame driven, say); eval.json is then absent,
         # and the realized score below is still written.
         try:
-            ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
-            scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
+            if clouds is None:
+                ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
+                scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
+            else:
+                ground_xyz, scene_xyz = clouds
             results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
             with open(os.path.join(output, 'eval.json'), 'w') as f:
                 json.dump(results, f)
@@ -281,7 +301,7 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                       "error": marker["error"] if marker else "the AD side answered None",
                       "marker": marker["marker"] if marker else None}
         else:
-            result = score_episode(output, cfg.model_path)
+            result = score_episode(output, cfg.model_path, clouds=clouds)
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
@@ -363,6 +383,12 @@ if __name__ == "__main__":
              "default in the rgb mode, where the frames are already rendered; sparse in the "
              "vector and raster modes, where every frame is a Gaussian render of its own.")
     parser.add_argument(
+        '--outputs', default='full', choices=('full', 'scoring'),
+        help="What an episode folder keeps. full: everything (ground.ply and scene.ply whole, "
+             "infos.pkl, the video). scoring: only what scoring needs -- data.pkl, the scores, and "
+             "ground.ply / scene.ply cropped to the corridor of the episode's own poses, which no "
+             "scorer looks beyond, so every score is unchanged; no infos.pkl; --video defaults to off.")
+    parser.add_argument(
         "--skip-native-eval",
         action="store_true",
         help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
@@ -439,7 +465,8 @@ if __name__ == "__main__":
         cfg.base.raster = raster
     elif args.raster_view is not None or args.raster_rig is not None:
         raise SystemExit(f"--raster_view / --raster_rig need the raster mode; this run is {cfg.base.obs_mode}")
-    video = args.video or ('full' if cfg.base.obs_mode == 'rgb' else 'sparse')
+    video = args.video or ('off' if args.outputs == 'scoring' else 'full' if cfg.base.obs_mode == 'rgb' else 'sparse')
+    cfg.base.write_point_clouds = args.outputs == 'full'
 
     model_path = os.path.join(cfg.base.model_base, cfg.scenario.scene_name)
     model_config = OmegaConf.load(os.path.join(model_path, 'cfg.yaml'))
@@ -501,14 +528,17 @@ if __name__ == "__main__":
     # realized_score.json without --realized_score, and data.pkl / infos.pkl when the episode
     # dies before writing them (an agent that exits outright, say), which a scorer would
     # otherwise take for this run's drive.
-    for name in ('eval.json', 'video.mp4', 'agent_crash.txt', 'pictura_crash.json', 'realized_score.json',
-                 'data.pkl', 'infos.pkl'):
+    stale = ('eval.json', 'video.mp4', 'agent_crash.txt', 'pictura_crash.json', 'realized_score.json',
+             'data.pkl', 'infos.pkl')
+    if args.outputs == 'scoring':
+        stale += ('ground.ply', 'scene.ply')  # an episode that dies early would leave an earlier run's
+    for name in stale:
         if os.path.exists(os.path.join(output, name)):
             os.remove(os.path.join(output, name))
     if args.in_process:
         try:
             create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score)
+                           realized_score=args.realized_score, outputs=args.outputs)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -517,7 +547,7 @@ if __name__ == "__main__":
         try:
             create_gym_env(cfg, output, FifoAgent(output, process),
                            skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score)
+                           realized_score=args.realized_score, outputs=args.outputs)
             check_alive(process)
         except Exception:
             import traceback
