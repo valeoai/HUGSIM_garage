@@ -15,7 +15,7 @@ with it. Per keyframe t (every 0.5 s of the rollout):
          the earliest contact tau* (with a partner or the background) gives min(1, tau*/1.0)
 * COM_t  the realized trajectory over the next 1.0 s against HUGSIM's comfort bounds
          (a_long in [-4.05, 2.40], |jerk| <= 8.37, |yaw acc| <= 1.93, |yaw rate| <= 0.95): {0, 1}
-* R_c    arc-length fraction of the densified recorded camera track reached, min(1, max s / S)
+* R_c    route completion, in one of two conventions (below)
 
 score = mean_t [ NC_t * DAC_t * (5 TTC_t + 2 COM_t) / 7 ] * R_c   (TerraTransfer's "HD-Score")
 
@@ -23,11 +23,14 @@ Three HD-Score variants are reported side by side, because TerraTransfer's own t
 route completion and R_c multiplies the whole score:
 
   hdscore                      HUGSIM's own score, of the planned trajectory, copied from the
-                               episode's eval.json (None without one), not recomputed
-  hdscore_realized             this score with HUGSIM's index fraction ``rc``, which the ICLR 2027
-                               submission reverts to so that its numbers stay comparable with HUGSIM's
-  hdscore_realized_arclength   this score with the arc length above, ``rc_arclength`` (arXiv v1/v2,
-                               App. B Eq. 14)
+                               episode's eval.json when it was written for this data.pkl (None
+                               otherwise), not recomputed
+  hdscore_realized             this score with R_c = ``rc``, HUGSIM's index fraction
+                               min(1, (k+1) / 0.9 N) of the recorded camera poses reached, which the
+                               ICLR 2027 submission reverts to so that its numbers stay comparable
+                               with HUGSIM's
+  hdscore_realized_arclength   this score with R_c = ``rc_arclength``, the arc-length fraction of
+                               the densified recorded camera track reached (arXiv v1/v2, App. B Eq. 14)
 
 Everything is read from what HUGSIM saves per episode (data.pkl, ground.ply, scene.ply) plus the
 scene's ground_param.pkl, so any past run can be rescored: score_realized.py does that for
@@ -43,7 +46,9 @@ metric invariant to dt because the *window* is fixed in seconds; the derivatives
 not. Where the paper leaves a choice open this follows HUGSIM: velocities are finite differences
 of the recorded frames, and a partner's velocity is its displacement since the previous frame.
 
-Ported from Pictura's scripts/hugsim/closed_loop_score.py; the scoring is unchanged.
+The same scorer as Pictura's scripts/hugsim/realized_score.py, the scoring unchanged. A
+keyframe's comfort window is cut short near the end of the episode, and fewer than four poses
+score COM = 1, as there.
 """
 
 import json
@@ -320,8 +325,11 @@ def score_episode(ep_dir, scene_dir):
     # `hdscore` is HUGSIM's own score, of the planned trajectory, copied from eval.json (None when
     # the episode has none: --skip-native-eval, or HUGSIM's scorer died), so the three variants sit
     # side by side; this scorer's own is `hdscore_realized`.
-    eval_path = os.path.join(ep_dir, "eval.json")
-    hdscore = json.load(open(eval_path)).get("hdscore") if os.path.isfile(eval_path) else None
+    # closed_loop.py writes eval.json after data.pkl; one older than data.pkl is a previous run's.
+    eval_path, data_path = os.path.join(ep_dir, "eval.json"), os.path.join(ep_dir, "data.pkl")
+    hdscore = None
+    if os.path.isfile(eval_path) and os.stat(eval_path).st_mtime_ns >= os.stat(data_path).st_mtime_ns:
+        hdscore = json.load(open(eval_path)).get("hdscore")
     return {
         "hdscore": hdscore,
         **mean,

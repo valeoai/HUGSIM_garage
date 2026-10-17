@@ -199,7 +199,7 @@ Two scores, for two questions:
 
 | | what it judges | where |
 |---|---|---|
-| `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written by every episode (`get_score.py` averages them) |
+| `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written at the end of every episode unless `--skip-native-eval` is passed or HUGSIM's scorer fails on it (`get_score.py` averages them) |
 | the realized score, TerraTransfer's closed-loop HD-Score ([arXiv 2606.17386](https://arxiv.org/abs/2606.17386), App. B) | the **realized** trajectory: per 0.5 s keyframe NC and DAC at the ego's pose, TTC propagated 1 s ahead, comfort over the next 1 s | `realized_score.json` with `--realized_score`, or `score_realized.py` for past runs |
 
 `hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
@@ -223,8 +223,15 @@ variants side by side:
 The two realized variants differ only by route completion; the index one is usually the higher
 (about 1.14x on average). The comfort term is only comparable at the same simulator step: the window is fixed in
 seconds, but jerk is a third finite difference at dt, and the paper runs at dt = 0.1 s
-(`configs/sim/kinematic_10hz.yaml`). An episode the agent ended by answering `None` is recorded as
-`{"crashed": true}` rather than scored. `sim/utils/realized_score.py` has the definitions.
+(`configs/sim/kinematic_10hz.yaml`). `sim/utils/realized_score.py` has the definitions.
+
+Not every episode gets a score. With `--realized_score`, an episode the agent ended by answering
+`None` is recorded as `{"crashed": true}`; offline, `score_realized.py` records one as crashed
+when the agent left a crash marker (`agent_crash.txt` from `agents/client.py`, or Pictura's
+`pictura_crash.json`), and one with fewer than two frames (an agent that refused at its first step)
+as `{"too_short": true}`. An agent that exits outright ends the episode before anything is written,
+so that episode has no score file at all. `score_realized.py` keeps a cached score only while it
+matches the episode's `data.pkl`, and retries everything else on every pass.
 
 ## Environment
 

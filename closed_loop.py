@@ -19,7 +19,7 @@ from sim.utils.launch_ad import launch, check_alive, kill
 from omegaconf import OmegaConf
 import open3d as o3d
 from sim.utils.score_calculator import hugsim_evaluate
-from sim.utils.realized_score import score_episode
+from sim.utils.realized_score import read_crash_marker, score_episode
 import numpy as np
 from moviepy import ImageSequenceClip
 
@@ -259,17 +259,27 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
     if skip_native_eval:
         print('skipping the native scorer (--skip-native-eval); score offline from data.pkl', flush=True)
     else:
-        ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
-        scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
-        results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
-        with open(os.path.join(output, 'eval.json'), 'w') as f:
-            json.dump(results, f)
+        # HUGSIM's scorer raises on some episodes (no frame driven, say); eval.json is then absent,
+        # and the realized score below is still written.
+        try:
+            ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
+            scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
+            results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
+            with open(os.path.join(output, 'eval.json'), 'w') as f:
+                json.dump(results, f)
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     # The realized score, TerraTransfer's closed-loop HD-Score (sim/utils/realized_score.py), beside
-    # HUGSIM's own: an episode the AD side ended by answering None is a crash, not a drive.
+    # HUGSIM's own: an episode the AD side ended by answering None is a crash, not a drive. An agent
+    # that exits outright never gets here (ask() raises): such an episode has no score file at all.
     if realized_score:
         if ad_crashed:
-            result = {"crashed": True, "crash_step": cnt, "error": "the AD side answered None"}
+            marker = read_crash_marker(output)
+            result = {"crashed": True, "crash_step": marker["step"] if marker else cnt,
+                      "error": marker["error"] if marker else "the AD side answered None",
+                      "marker": marker["marker"] if marker else None}
         else:
             result = score_episode(output, cfg.model_path)
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
@@ -487,8 +497,12 @@ if __name__ == "__main__":
 
     # Files an earlier run left in the reused episode folder that this run may not rewrite:
     # eval.json when it is refused or passes --skip-native-eval, video.mp4 with --video off,
-    # agent_crash.txt when the agent does not crash this time.
-    for name in ('eval.json', 'video.mp4', 'agent_crash.txt', 'realized_score.json'):
+    # agent_crash.txt / pictura_crash.json when the agent does not crash this time,
+    # realized_score.json without --realized_score, and data.pkl / infos.pkl when the episode
+    # dies before writing them (an agent that exits outright, say), which a scorer would
+    # otherwise take for this run's drive.
+    for name in ('eval.json', 'video.mp4', 'agent_crash.txt', 'pictura_crash.json', 'realized_score.json',
+                 'data.pkl', 'infos.pkl'):
         if os.path.exists(os.path.join(output, name)):
             os.remove(os.path.join(output, name))
     if args.in_process:
