@@ -78,10 +78,15 @@ def run(job, gpu, args, log):
             os.killpg(p.pid, signal.SIGKILL)
             p.wait()
             rc = "timeout"
-    try:  # whatever the episode left behind (an agent started by a launcher) goes with it
+    try:  # whatever the episode left behind goes with it
         os.killpg(p.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    # An agent behind a launcher runs in a session of its own (sim/utils/launch_ad.py), which the
+    # episode kills when it ends normally; one killed from outside (--timeout) leaves it blocked on
+    # a pipe, holding its GPU memory, and attached to the folder a retry would reuse. Its command
+    # line names the episode folder.
+    subprocess.run(["pkill", "-9", "-f", f"{job['episode']}( |$)"], check=False)
     status = "ok" if done(job) else f"fail({rc})"
     log(f"{status:12s} {time.time() - t0:7.0f}s gpu{gpu} {job['agent']:8s} {os.path.relpath(job['episode'], args.out)}")
     return done(job)
