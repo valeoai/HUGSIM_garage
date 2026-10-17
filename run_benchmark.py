@@ -109,14 +109,38 @@ def wait_for_memory(job, gpu, log):
             time.sleep(15)
 
 
+#: An agent or a simulator that dies of these did not fail the episode: the GPU had no room for it.
+GPU_RESOURCE_ERRORS = ("out of memory", "cublas_status_alloc_failed", "cudnn_status_not_initialized",
+                       "cusolver_status_internal_error")
+
+
 def out_of_memory(job):
-    for name in ("run.log", "output.txt"):
+    for name in ("run.log", "output.txt", "agent_crash.txt"):
         try:
             with open(os.path.join(job["episode"], name), errors="replace") as f:
-                if "out of memory" in f.read().lower():
-                    return True
+                text = f.read().lower()
         except OSError:
-            pass
+            continue
+        if any(e in text for e in GPU_RESOURCE_ERRORS):
+            return True
+    return False
+
+
+def gpu_crash(job):
+    """A crash record whose cause was the GPU's memory, not the agent: it is dropped and re-run.
+
+    On a GPU shared with other jobs an agent can fail to allocate at start-up or mid-episode; the
+    episode then ends as an agent crash and would be scored 0, which says nothing about the agent.
+    """
+    path = os.path.join(job["episode"], "realized_score.json")
+    try:
+        with open(path) as f:
+            rec = __import__("json").load(f)
+    except (OSError, ValueError):
+        return False
+    if rec.get("crashed") and any(e in (rec.get("error") or "").lower() for e in GPU_RESOURCE_ERRORS):
+        os.remove(path)
+        return True
     return False
 
 
@@ -143,7 +167,10 @@ def run(job, gpu, args, log):
     # a pipe, holding its GPU memory, and attached to the folder a retry would reuse. Its command
     # line names the episode folder.
     subprocess.run(["pkill", "-9", "-f", f"{job['episode']}( |$)"], check=False)
-    status = "ok" if done(job) else ("oom" if out_of_memory(job) else f"fail({rc})")
+    if gpu_crash(job):
+        status = "oom"
+    else:
+        status = "ok" if done(job) else ("oom" if out_of_memory(job) else f"fail({rc})")
     log(f"{status:12s} {time.time() - t0:7.0f}s gpu{gpu} {job['agent']:8s} {os.path.relpath(job['episode'], args.out)}")
     return done(job)
 
