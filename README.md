@@ -51,6 +51,11 @@ height; reactive agents gain, because it was also inventing collisions overhead.
 
 * **No absolute paths in the configs.** Every root is an `${oc.env:VAR}` interpolation, so one
   checkout serves any machine. See [Agents](#agents).
+* **Two benchmark sets, one scene tree.** `prechallenge345` (the 345 scenarios of the 2025-07
+  release) and `official436` (the current one) share one scene tree and one 3DRealCar copy, and
+  [`prepare_benchmark.py`](#benchmark-sets) builds the layout from the pinned Hugging Face
+  revisions and repairs the scenarios that do not run as shipped. The sweep scripts take the set as
+  an argument and episodes are filed under it.
 * **Three observation modes.** Besides the Gaussian render (`rgb`), an agent can be handed the
   scene as geometry, `sim/scene_export/` (typed road segments, actor cuboids, the route), and
   asked to read it as it is (`vector`) or to draw it with its own renderer (`raster`). See
@@ -81,7 +86,7 @@ over two FIFOs in that directory. Point the simulator at it in whichever way sui
 ```bash
 python closed_loop.py --scenario_path ... --base_path ./configs/sim/nuscenes_base.yaml \
     --camera_path ./configs/sim/nuscenes_camera.yaml --kinematic_path ./configs/sim/kinematic.yaml \
-    --ad my_agent --ad_path /path/to/my_e2e.sh --output_dir /where/episodes/go
+    --ad my_agent --ad_path /path/to/my_e2e.sh --output_dir /where/episodes/go/nuscenes_
 ```
 
 `--ad_path` wins; otherwise `base.<ad>_path` from the config; otherwise the environment variable
@@ -144,9 +149,10 @@ at its first step: it says why in its log (its stdout and stderr go to the episo
 `output.txt`) and answers `None` on `plan_pipe`. `closed_loop.py` then ends the episode and
 sends `'Done'`. The episode folder has no `eval.json` and its `data.pkl` holds no frames, so
 `get_score.py` lists the scenario as missing; `closed_loop.py` still exits 0. An agent must
-answer, and then read that `'Done'`: one that raises or exits instead leaves `closed_loop.py`
-blocked on a pipe until something kills it, since nothing watches the agent's process during
-the episode.
+answer, and then read that `'Done'`. One that exits instead is caught: `closed_loop.py` watches
+the launcher's process, releases the pipe it waits on, and ends the episode with an error naming
+the agent's exit code and `output.txt` (agents/client.py's `serve` keeps both promises for the
+agents in `agents/`).
 
 Neither abstract mode renders the cameras each step. Before the modes, an agent on the export
 still had all six cameras rendered and piped to it every step, and it never read them. The
@@ -241,7 +247,7 @@ themselves); `closed_loop.py` checks only the ones a given run reads and reports
 | variable | what it is |
 |---|---|
 | `HUGSIM_DATA` | the tree holding `HUGSIM/` (3DRealCar, scenes, the two benchmark sets), built by [`prepare_benchmark.py`](#benchmark-sets) |
-| `HUGSIM_OUT` | where episode folders are written (`$HUGSIM_OUT/<set>/<dataset>_<agent>/`), or pass `--output_dir` |
+| `HUGSIM_OUT` | where episode folders are written (`$HUGSIM_OUT/<set>/<dataset>_<agent>/`), or pass `--output_dir`, which is used as given (no `<set>` folder; the agent name is appended to it) |
 | `HUGSIM_AD_<NAME>` | an agent's launcher, or pass `--ad_path`; needed only for agents not in `agents/` |
 | `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)) |
 | `NUSCENES_RAW` | raw nuScenes, read only by scenarios with `load_HD_map: true` |
@@ -339,7 +345,14 @@ The release's scenarios do not run as shipped, so the script repairs them (the v
 (`.../ss/scenarios/<set>/<dataset>/`), so an episode lands in
 `$HUGSIM_OUT/<set>/<dataset>_<agent>/<scene>_<mode>` and a scenario that is in both sets never
 overwrites the other's run; a scenario outside those folders (`configs/benchmark/`) keeps
-`$HUGSIM_OUT/<dataset>_<agent>/`. `python get_score.py [set] [agent]` scores one set.
+`$HUGSIM_OUT/<dataset>_<agent>/`. `python get_score.py <set> <agent>` scores one set: it counts
+only the episodes that are scenarios of that set, lists other folders as ignored and scenarios
+never run as missing.
+
+Migrating old results: episode folders from the old install's public scenarios belong under
+`$HUGSIM_OUT/prechallenge345/`, and the `*_private_*` ones under `$HUGSIM_OUT/official436/`. Do
+not move public folders into `official436`: that set retired 94 of the public scenarios and
+changed the actors in 15 more, so they would mix other scenarios into its mean.
 
 # Scenarios configuration with GUI
 

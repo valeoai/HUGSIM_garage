@@ -5,6 +5,11 @@ agents, with an environment of their own. The code under `agents/uniad/` and `ag
 Zhou et al.'s UniAD_SIM and VAD_SIM; see [uniad/NOTICE.md](../uniad/NOTICE.md) and
 [vad/NOTICE.md](../vad/NOTICE.md) for the commits, the licence and what was changed. Both read `rgb` observations (6 nuScenes cameras) and answer a `(6, 2)` plan.
 
+The environment is built once per checkout, under `agents/_mmdet3d/.pixi`; the launchers refuse
+to start without it rather than install it inside an episode. A checkout that built it before this
+folder was named `_mmdet3d` has it at `agents/mmdet3d/.pixi`: conda environments do not survive a
+move, so rebuild it with the commands below and delete `agents/mmdet3d/`.
+
 ```bash
 # once: the environment (python 3.9, torch 2.1.2+cu121, mmcv-full 1.7.2, mmdet 2.28, mmdet3d 1.0.0rc6)
 pixi install --manifest-path agents/_mmdet3d/pixi.toml

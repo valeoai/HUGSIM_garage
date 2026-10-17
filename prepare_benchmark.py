@@ -33,7 +33,7 @@ The release does not run as shipped, so every scenario goes through three repair
 * Every vehicle asset is written as ``<id>/postprocess/shadow.pth``, but the 3DRealCar release
   holds ``<id>/gs.pth`` and ``<id>/wlh.json``, and HUGSIM joins ``gs.pth`` onto the path
   itself (``sim/utils/plan.py``). It is reduced back to ``<id>``.
-* Nine pandaset ``medium-02`` scenarios pass ``max_t: 25`` to ``ConstantPlanner``, whose
+* Fifteen pandaset ``medium-02`` scenarios (in the official zip) pass ``max_t: 25`` to ``ConstantPlanner``, whose
   ``__init__`` takes no arguments. It is dropped.
 * ``waymo/scene-140045460035-hard-00.yaml`` has ``start_velo: 1R``. It becomes ``1``.
 
@@ -149,8 +149,8 @@ def normalise(text, name):
     """Repair a scenario and re-serialise it, so the file runs as the tree does."""
     try:
         return yaml.safe_dump(repair_cfg(yaml.safe_load(text), name), sort_keys=False)
-    except ValueError as e:
-        sys.exit(str(e))
+    except (ValueError, KeyError, TypeError, IndexError, yaml.YAMLError) as e:
+        sys.exit(f"{name}: cannot repair this scenario ({type(e).__name__}: {e})")
 
 
 def read_scenarios_zip(path):
@@ -248,6 +248,9 @@ def extract_scene(zip_path, dest):
         found = [p.parent for p in Path(tmp).rglob("scene.pth")]
         if len(found) != 1:
             sys.exit(f"{zip_path}: expected one scene.pth, found {len(found)}")
+        if dest.exists() and not (dest / "scene.pth").exists():
+            # An incomplete folder would make the move nest the scene inside it.
+            shutil.rmtree(dest)
         shutil.move(str(found[0]), str(dest))
 
 
@@ -298,7 +301,11 @@ def install_scenes_hf(args, scene_zip_listing, cache):
     for ds in args.datasets:
         out = scene_dir(args.root, ds)
         out.mkdir(parents=True, exist_ok=True)
+        # A killed extraction leaves its temp dir behind.
+        for leftover in out.glob(".extract_*"):
+            shutil.rmtree(leftover, ignore_errors=True)
         localized = 0
+        linked = 0
         for scene, (path, _) in sorted(scene_zip_listing[ds].items()):
             if not (out / scene / "scene.pth").exists():
                 print(f"[scene] {ds}/{scene}", flush=True)
@@ -309,17 +316,30 @@ def install_scenes_hf(args, scene_zip_listing, cache):
                     blob = Path(zip_path).resolve()
                     Path(zip_path).unlink()
                     blob.unlink(missing_ok=True)
-            # Also run on scenes that were already there, so an older tree is fixed.
+            # Also run on scenes that were already there, so an older tree is fixed. Never through
+            # a link: on a --from-install root that would rewrite the old install's files.
+            if out.resolve() != out or (out / scene).is_symlink():
+                linked += 1
+                continue
             localized += localize_scene_cfg(out / scene)
         if localized:
             print(f"[scene] {ds}: replaced the authors' paths in {localized} cfg.yaml")
+        if linked:
+            print(f"[scene] {ds}: {linked} scenes are links into another install, cfg.yaml left as it is")
+
+
+def vehicle_ids(root):
+    """The 3DRealCar ids that have both ``gs.pth`` and ``wlh.json``."""
+    root = Path(root)
+    return {p.parent.name for p in root.glob("*/gs.pth")} & {p.parent.name for p in root.glob("*/wlh.json")}
 
 
 def install_vehicles_hf(args, cache):
     from huggingface_hub import snapshot_download
 
     root = realcar_dir(args.root)
-    if root.is_dir() and len(list(root.glob("*/gs.pth"))) >= EXPECTED_VEHICLES:
+    # Both files of every vehicle, not just gs.pth: a run that died between them must be repaired.
+    if len(vehicle_ids(root)) >= EXPECTED_VEHICLES:
         return
     print(f"[3DRealCar] -> {root}", flush=True)
     snapshot_download(
@@ -336,13 +356,24 @@ def install_map_cache_hf(args, cache):
     from huggingface_hub import hf_hub_download
 
     target = map_cache_dir(args.root) / "nusc_trainval"
+    # Extract beside the target and rename, so an interrupted extraction is never taken for a
+    # finished one (the target exists only once it is complete).
+    for leftover in hugsim_dir(args.root).glob(".extract_*"):
+        shutil.rmtree(leftover, ignore_errors=True)
     if not target.is_dir():
         print(f"[nusc_map_cache] -> {target}", flush=True)
         zip_path = hf_hub_download(
             REPO_ID, "nusc_map_cache.zip", repo_type="dataset", revision=FULL_REVISION, cache_dir=cache
         )
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(hugsim_dir(args.root))
+        hugsim_dir(args.root).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=hugsim_dir(args.root), prefix=".extract_") as tmp:
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp)
+            found = [p for p in Path(tmp).rglob("nusc_trainval") if p.is_dir()]
+            if len(found) != 1:
+                sys.exit(f"{zip_path}: expected one nusc_trainval folder, found {len(found)}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            found[0].rename(target)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -397,6 +428,9 @@ def link_home_map_cache(args):
     if not target.is_dir():
         return
     home = Path(os.path.expanduser("~/.unified_data_cache/nusc_trainval"))
+    if home.is_symlink() and not home.exists():
+        print(f"[nusc_map_cache] {home} was a dangling link to {os.readlink(home)}, replaced")
+        home.unlink()
     if home.exists() or home.is_symlink():
         print(f"[nusc_map_cache] {home} already exists, left alone")
     else:
@@ -419,6 +453,10 @@ def verify(args):
     bad = len(cars) < EXPECTED_VEHICLES or cars != wlh
     problems += bad
     print(f"{'BAD' if bad else 'OK '} 3DRealCar {len(cars)}/{EXPECTED_VEHICLES} vehicles")
+    if "nuscenes" in args.datasets:
+        bad = not (map_cache_dir(args.root) / "nusc_trainval").is_dir()
+        problems += bad
+        print(f"{'BAD' if bad else 'OK '} nusc_map_cache nusc_trainval {'missing' if bad else 'present'}")
     for ds in args.datasets:
         sdir = scene_dir(args.root, ds)
         have = {p.parent.name for p in sdir.glob("*/scene.pth")} if sdir.is_dir() else set()
@@ -435,17 +473,22 @@ def verify(args):
             sdir = scene_dir(args.root, ds)
             issues = collections.defaultdict(list)
             for path in files:
-                cfg = yaml.safe_load(path.read_text())
-                if not (sdir / str(cfg["scene_name"]) / "scene.pth").exists():
+                try:
+                    cfg = yaml.safe_load(path.read_text())
+                    scene_name, plan_list = str(cfg["scene_name"]), cfg["plan_list"]
+                except (KeyError, TypeError, yaml.YAMLError) as e:
+                    issues[f"unreadable scenario ({type(e).__name__}: {e})"].append(path.name)
+                    continue
+                if not (sdir / scene_name / "scene.pth").exists():
                     issues["scene not under ss/scenes"].append(path.name)
-                for actor in cfg["plan_list"]:
+                for actor in plan_list:
                     if actor[6] != "UnicyclePlanner" and not (realcar_dir(args.root) / str(actor[5]) / "gs.pth").exists():
                         issues["vehicle not in 3DRealCar"].append(path.name)
                 try:
                     if repair_cfg(copy.deepcopy(cfg), path.name) != cfg:
                         issues["still needs a repair"].append(path.name)
-                except ValueError as e:
-                    issues[f"unrepairable ({e})"].append(path.name)
+                except (ValueError, KeyError, TypeError, IndexError) as e:
+                    issues[f"unrepairable ({type(e).__name__}: {e}) in {path}"].append(path.name)
             want = EXPECTED_SCENARIOS[set_name][ds]
             bad = len(files) != want or bool(issues)
             problems += bad
@@ -486,9 +529,16 @@ def main():
     if args.dry_run or args.from_install:
         # Reading the two scenarios.zip files (~200 kB each) must not create the HF cache in --root.
         cache = Path(tempfile.mkdtemp(prefix="hugsim_sets_"))
+        try:
+            build(args, cache)
+        finally:
+            shutil.rmtree(cache, ignore_errors=True)
     else:
         args.root.mkdir(parents=True, exist_ok=True)
-        cache = args.root / ".hf_cache"
+        build(args, args.root / ".hf_cache")
+
+
+def build(args, cache):
     scenarios = resolve_scenarios(args, cache)
     print(f"{REPO_ID}: prechallenge345 = scenarios.zip at {PRE_REVISION[:10]}, official436 = scenarios.zip at {FULL_REVISION[:10]}")
 
@@ -521,7 +571,13 @@ def main():
         print(f"  shared: 3DRealCar {realcar_gb:.1f} GB, nusc_map_cache {files['nusc_map_cache.zip'] / 1e9:.1f} GB")
         if args.dry_run:
             sel = sum(size for ds in args.datasets for _, size in scene_zip_listing[ds].values()) / 1e9
-            print(f"would download {sel:.1f} GB of scene zips for {', '.join(args.datasets)}, to {hugsim_dir(args.root)}")
+            extra = f"{realcar_gb:.1f} GB of 3DRealCar"
+            if "nuscenes" in args.datasets:
+                extra += f" and {files['nusc_map_cache.zip'] / 1e9:.1f} GB of nusc_map_cache"
+            print(
+                f"would download {sel:.1f} GB of scene zips for {', '.join(args.datasets)}, plus {extra}, "
+                f"to {hugsim_dir(args.root)}"
+            )
             return
     elif args.dry_run:
         pub, priv = old_layout(args.from_install)

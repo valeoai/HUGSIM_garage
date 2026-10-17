@@ -1,6 +1,7 @@
 # Environment of the UniAD and VAD agents (agents/uniad, agents/vad; the environment lives in
-# agents/_mmdet3d). Separate from the simulator's pixi workspace at the
-# repo root: this stack is the 2022-23 mmlab one (mmcv 1.x, mmdet 2.x, mmdet3d 1.0.0rc6), which needs its own torch and CUDA toolchain.
+# agents/_mmdet3d). Separate from the simulator's pixi workspace at the repo root: this stack is
+# the 2022-23 mmlab one (mmcv 1.x, mmdet 2.x, mmdet3d 1.0.0rc6), which needs its own torch and
+# CUDA toolchain.
 #
 #   pixi install --manifest-path agents/_mmdet3d/pixi.toml
 #   pixi run --manifest-path agents/_mmdet3d/pixi.toml install-mmcv      # compiles CUDA ops, slow
