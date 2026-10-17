@@ -65,9 +65,50 @@ def command(job, args):
     return cmd
 
 
+#: Free GPU memory an episode needs to start, in MiB: the simulator, plus the agent's own process for
+#: an agent behind a launcher (UniAD and VAD hold about 4.6 GB besides the simulator's ~6 GB).
+NEED_MB = {"uniad": 16000, "vad": 16000}
+DEFAULT_NEED_MB = 12000
+#: Seconds a GPU is held after a launch, while the new episode loads and allocates: two workers
+#: reading the same free memory would otherwise both start.
+LOAD_HOLD_S = 45
+GPU_LOCKS = {}
+
+
+def free_mb(gpu):
+    try:
+        out = subprocess.run(["nvidia-smi", "-i", str(gpu), "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=30).stdout
+        return int(out.strip().splitlines()[0])
+    except Exception:
+        return 0
+
+
+def wait_for_memory(job, gpu):
+    """Hold the GPU's lock until it has room for this episode, then for LOAD_HOLD_S after the start."""
+    need = NEED_MB.get(job["agent"], DEFAULT_NEED_MB)
+    lock = GPU_LOCKS.setdefault(str(gpu), threading.Lock())
+    lock.acquire()
+    while free_mb(gpu) < need:
+        time.sleep(15)
+    threading.Timer(LOAD_HOLD_S, lock.release).start()
+
+
+def out_of_memory(job):
+    for name in ("run.log", "output.txt"):
+        try:
+            with open(os.path.join(job["episode"], name), errors="replace") as f:
+                if "out of memory" in f.read().lower():
+                    return True
+        except OSError:
+            pass
+    return False
+
+
 def run(job, gpu, args, log):
     os.makedirs(job["episode"], exist_ok=True)
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONPATH=f"{REPO}/sim:{REPO}")
+    wait_for_memory(job, gpu)
     t0 = time.time()
     with open(os.path.join(job["episode"], "run.log"), "w") as f:
         p = subprocess.Popen(command(job, args), cwd=REPO, env=env, stdout=f, stderr=subprocess.STDOUT,
@@ -87,7 +128,7 @@ def run(job, gpu, args, log):
     # a pipe, holding its GPU memory, and attached to the folder a retry would reuse. Its command
     # line names the episode folder.
     subprocess.run(["pkill", "-9", "-f", f"{job['episode']}( |$)"], check=False)
-    status = "ok" if done(job) else f"fail({rc})"
+    status = "ok" if done(job) else ("oom" if out_of_memory(job) else f"fail({rc})")
     log(f"{status:12s} {time.time() - t0:7.0f}s gpu{gpu} {job['agent']:8s} {os.path.relpath(job['episode'], args.out)}")
     return done(job)
 
@@ -118,7 +159,7 @@ def main():
             print(" ".join(command(j, args)))
         return
 
-    lock, queue, retried = threading.Lock(), list(todo), set()
+    lock, queue, retried, ooms = threading.Lock(), list(todo), set(), Counter()
     log_path = os.path.join(args.out, args.set, "run_benchmark.log")
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
@@ -137,7 +178,12 @@ def main():
                 job = queue.pop()
             if not run(job, gpu, args, log):
                 with lock:
-                    if job["episode"] not in retried:
+                    # An out-of-memory start says nothing about the agent: it goes back in the queue
+                    # without spending the one retry (up to 5 times).
+                    if out_of_memory(job) and ooms[job["episode"]] < 5:
+                        ooms[job["episode"]] += 1
+                        queue.insert(0, job)
+                    elif job["episode"] not in retried:
                         retried.add(job["episode"])
                         queue.insert(0, job)
 
