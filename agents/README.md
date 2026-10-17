@@ -24,7 +24,7 @@ Every agent is a folder named like its `--ad` name and like its checkpoint folde
 `$HUGSIM_AGENT_CKPTS/<name>/`, with a `launch.sh` and a `NOTICE.md` (where each file came from). The code
 the NAVSIM-family agents share is in `_navsim/` (`NOTICE.md` there too; each agent's `spec.py` is what
 distinguishes it), the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
-imports another, so deleting one leaves the rest working (`agents/LICENSE` is the Apache-2.0 text of the
+imports another, so deleting one leaves the rest working (`_navsim/LICENSE` is the Apache-2.0 text of the
 NAVSIM-family code).
 
 `drivor` is the agent NAVSIM's `dynamo_e2e.sh` launched: that script loads DrivoR
@@ -127,7 +127,9 @@ serve(episode_dir, step)   # step(obs, info) -> (N, 2) plan, (right, forward) m,
 with the traceback in `<episode>/agent_crash.txt`) and returns after the simulator's `'Done'`,
 or when the simulator closes the pipe without writing. For what `serve` cannot cover (an agent
 that dies before serving, or crashes outright), `closed_loop.py` watches the launcher's process. An agent that runs in the simulator's environment can also be
-listed in `registry.py`, which makes `--in_process` available to it.
+listed in `registry.py`, which makes `--in_process` available to it. A NAVSIM-family agent is one
+folder plus its name in `_navsim/__init__.py`'s `AGENTS` (the registry derives from it); its default
+launcher also takes a `<name>_path` line in the `configs/sim/*_base.yaml` (or a `HUGSIM_AD_<NAME>`).
 
 ## Checking a port
 

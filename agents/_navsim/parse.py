@@ -13,7 +13,6 @@ import numpy as np
 
 from .common import AgentInput, Camera, Cameras, EgoStatus, Lidar
 
-OPENCV2IMU = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
 
 # HUGSIM camera name -> NAVSIM camera slot
 CAMERA_SLOTS = {'CAM_FRONT': 'cam_f0', 'CAM_FRONT_RIGHT': 'cam_r0', 'CAM_FRONT_LEFT': 'cam_l0', 'CAM_BACK': 'cam_b0'}
