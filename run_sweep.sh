@@ -14,11 +14,16 @@ sim_cuda=${2:-0}
 ad_cuda=${3:-0}
 scenario_set=${4:-official436}
 
-cd /home/yyin5/workspace/HUGSIM || exit 1
-PIXI=/home/yyin5/workspace/pixi/bin/pixi
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
+# pixi: $PIXI if set, else the one on PATH.
+PIXI=${PIXI:-pixi}
+if ! command -v "${PIXI}" > /dev/null; then
+    echo "Error: pixi not found: put it on PATH or set PIXI=/path/to/pixi"
+    exit 1
+fi
 # The AD side (NAVSIM/${AGENT}_e2e.sh) is spawned by closed_loop.py and calls `pixi run`,
 # so pixi must be on PATH in this non-interactive environment as well.
-export PATH=/home/yyin5/workspace/pixi/bin:${PATH}
+case "${PIXI}" in */*) export PATH="$(dirname "${PIXI}"):${PATH}" ;; esac
 
 for pass in $(seq 1 30); do
     echo "================ PASS ${pass} ${AGENT} $(date -Is) ================"

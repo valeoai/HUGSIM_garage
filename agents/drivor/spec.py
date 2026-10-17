@@ -11,7 +11,6 @@ from .._navsim.policy import AgentSpec
 WHEELBASE = 2.7  # m, DrivoR's lateral-acceleration estimate
 
 
-
 def _get_intrinsics(dict_intrinsics):
     H, W = dict_intrinsics['H'], dict_intrinsics['W']
     cx, cy = dict_intrinsics['cx'], dict_intrinsics['cy']

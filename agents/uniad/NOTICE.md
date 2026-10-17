@@ -26,7 +26,7 @@ patches that adapt the code to mmdet 2.26+ / mmdet3d 1.0.0rc6. They are part of 
 * `tools/closeloop/visualizer.py`: `draw_bev` and `draw_proj` and their imports (open3d, mediapy,
   nuscenes `Box`) are removed; nothing called them, and they were the only users of open3d.
 * Pruned, as whole files only, after tracing which files the inference path imports (with and
-  without `HUGSIM_AGENT_VIZ=1`): training and test drivers (`uniad/apis`, `VAD/apis`, `bevformer/`, training hooks), dataset samplers and evaluation
+  without `HUGSIM_AGENT_VIZ=1`): training and test drivers (`uniad/apis`, `bevformer/`, training hooks), dataset samplers and evaluation
   helpers that nothing imports, the configs outside the `_base_` chain of `base_e2e.py`, `tools/`
   other than the closed-loop and visualiser code. No model code is edited.
 * Not copied: the checkpoint (`$HUGSIM_AGENT_CKPTS/uniad/`), docs, data converters, `data_template.pth`.

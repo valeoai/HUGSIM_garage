@@ -362,8 +362,9 @@ if __name__ == "__main__":
              "agent or a variant of one needs no config file and no code change here.")
     parser.add_argument(
         '--output_dir', default=None,
-        help="Overrides base.output_dir. The agent name is still appended, as it is for the "
-             "config value, so the episode folder is named the same way either way.")
+        help="Overrides base.output_dir and is used as given: no <set> folder is inserted (it is "
+             "for the config value). The agent name is still appended, as it is for the config "
+             "value, so end it like one, e.g. /out/nuscenes_ for /out/nuscenes_<agent>/.")
     parser.add_argument(
         '--obs_mode', default=None, choices=OBS_MODES,
         help="What the agent is handed: 'rgb', the Gaussian render; 'vector', the scene as "

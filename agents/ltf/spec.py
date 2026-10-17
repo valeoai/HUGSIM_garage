@@ -11,7 +11,6 @@ from .._navsim.policy import AgentSpec
 OPENCV2IMU = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
 
 
-
 def parse_ltf(obs, info):
     """``hugsim/dataparser.py``: three cameras, the pose from ``ego_pos`` (LTF never reads it)."""
     raw_imgs, imgs = resize_cameras(obs, THREE_CAMERAS)

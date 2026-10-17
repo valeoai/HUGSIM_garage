@@ -1,10 +1,10 @@
 # Third-party code in `agents/gtrs/`
 
-HUGSIM_garage itself is MIT-licensed (see the repository `LICENSE`). The files in this folder are adapted from the Apache-2.0 project(s) below and keep that licence (`../LICENSE` is the Apache-2.0 text). Each file's docstring names its origin. Changes are limited to what running inference
+HUGSIM_garage itself is MIT-licensed (see the repository `LICENSE`). The files in this folder are adapted from the Apache-2.0 project(s) below and keep that licence (`../_navsim/LICENSE` is the Apache-2.0 text). Each file's docstring names its origin. Changes are limited to what running inference
 inside HUGSIM's environment needs: the nuplan devkit, hydra, Lightning, ray and every training-only
 code path are removed, hydra configs become explicit dataclasses, pretrained backbones are not
 fetched at construction (the checkpoints carry them), and the HUGSIM client scripts are folded into
-`_navsim/policy.py` and this folder's `spec.py`.
+`../_navsim/policy.py` and this folder's `spec.py`.
 
 The agent reaches this repository through the HUGSIM client of [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM) (`gtrs_e2e.py` and its `parse_raw`), a fork of NAVSIM.
 

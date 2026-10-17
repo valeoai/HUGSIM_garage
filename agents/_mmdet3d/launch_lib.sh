@@ -42,6 +42,18 @@ launch_agent() {
     if [ -n "${HUGSIM_MMDET3D_PYTHON:-}" ]; then
         python=("$HUGSIM_MMDET3D_PYTHON")
     else
+        # Refuse rather than let `pixi run` install the environment inside an episode: that
+        # install lacks mmcv-full and mmdet3d (separate tasks), and parallel episodes would race on
+        # it. A checkout from before agents/mmdet3d became agents/_mmdet3d has its environment in
+        # the old place, which nothing uses any more.
+        if ! ls "$here"/.pixi/envs/default/lib/python3*/site-packages/mmcv/_ext*.so > /dev/null 2>&1; then
+            echo "[$agent] the mmdet3d environment is not built in $here/.pixi: run" >&2
+            echo "  pixi install --manifest-path $here/pixi.toml" >&2
+            echo "  pixi run --manifest-path $here/pixi.toml install-mmcv" >&2
+            echo "  pixi run --manifest-path $here/pixi.toml install-mmdet3d" >&2
+            echo "  (or set HUGSIM_MMDET3D_PYTHON); an older build at agents/mmdet3d/ can be deleted" >&2
+            return 1
+        fi
         python=("${PIXI:-pixi}" run --frozen --manifest-path "$here/pixi.toml" python)
     fi
     exec env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u LD_PRELOAD \
