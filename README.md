@@ -253,6 +253,17 @@ scores are identical to `--outputs full`, the default, which writes everything a
 drivable-area check also looks only at the ground points near each waypoint (`FAST_SCORING` in
 `score_calculator.py`, exact; set it to `False` for the original full-cloud loop).
 
+To evaluate agents on a whole set, `run_benchmark.py` runs the episodes in parallel, several per
+GPU, each with `--outputs scoring --realized_score` (agents in `agents/registry.py` in-process),
+skips the ones already scored, and retries a failure once; `aggregate_benchmark.py` then prints the
+three HD-Score variants per agent and dataset, counting an agent's crash as 0 and listing the
+episodes that produced no score:
+
+```bash
+python run_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436 --slots 0:14 1:4
+python aggregate_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436
+```
+
 ## Environment
 
 The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read
