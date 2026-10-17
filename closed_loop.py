@@ -264,8 +264,9 @@ if __name__ == "__main__":
         "--deterministic_tracker",
         action="store_true",
         help="stop the iLQR tracker on its iteration cap and convergence only, not on its 0.05 s "
-             "wall-clock budget, so an episode no longer depends on how busy the machine is. "
-             "Changes the controls, hence the episode: run it under an agent name of its own",
+             "wall-clock budget, so the tracking no longer depends on how busy the machine is "
+             "(scenarios with load_HD_map: true still draw actor routes at random). Changes the "
+             "controls, hence the episode: run it under an agent name of its own",
     )
     args = parser.parse_args()
     if args.deterministic_tracker:

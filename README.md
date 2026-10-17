@@ -53,7 +53,10 @@ height; reactive agents gain, because it was also inventing collisions overhead.
   default runs ended 69 and 67 frames long, two runs with the flag were identical frame for frame.
   The flag stops the solver on convergence and its 100-iteration cap only (every solve converged
   by iteration 37): about 45 ms more per step there (median 54 to 98 ms), 3 s over a 68-step
-  episode. Off by default, because it changes the controls and so every score.
+  episode at dt 0.25 s; the cost at dt 0.1 s is not measured. Off by default, because it changes
+  the controls and so every score. It makes the tracking reproducible, not every episode: on a
+  scenario with `load_HD_map: true` the actors still pick their route at a fork at random
+  (`get_route`, `sim/utils/plan.py`), unseeded and from a set whose order changes per process.
 
 ### Interface, not bug fixes
 
@@ -170,7 +173,8 @@ at the top of the script: it must be the same tree as `$HUGSIM_OUT`, as it is in
 `hugsim_env.sh`. `get_score.py` takes no arguments: to score the variant, edit its constants
 `MODEL_NAME` and `BENCH_ROOT` to `pictura_vector` and that tree. `run_all.sh` and
 `run_sweep.sh` take the agent name and pass it on. Any other `HUGSIM_ARGS` that changes what
-an episode is, such as another `--kinematic_path` (dt 0.1) or `--deterministic_tracker`, needs an agent name of its own
+an episode is, such as another `--kinematic_path` (dt 0.1) or `--deterministic_tracker`, needs an
+agent name of its own
 too, and the mode again: a `pictura` variant without `--obs_mode raster` runs in `rgb`, and
 Pictura refuses every episode.
 
