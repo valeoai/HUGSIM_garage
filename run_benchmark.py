@@ -72,7 +72,7 @@ DEFAULT_NEED_MB = 12000
 #: Seconds a GPU is held after a launch, while the new episode loads and allocates: two workers
 #: reading the same free memory would otherwise both start.
 LOAD_HOLD_S = 45
-GPU_LOCKS = {}
+GPU_LOCKS, GPU_LAST_START = {}, {}
 
 
 def free_mb(gpu):
@@ -84,14 +84,29 @@ def free_mb(gpu):
         return 0
 
 
-def wait_for_memory(job, gpu):
-    """Hold the GPU's lock until it has room for this episode, then for LOAD_HOLD_S after the start."""
+def wait_for_memory(job, gpu, log):
+    """Wait until the GPU has room for this episode and its previous start is LOAD_HOLD_S old.
+
+    One thread checks a GPU at a time (its lock is held only while checking); the start time it
+    records makes the next one wait for the new episode to allocate before reading free memory.
+    """
     need = NEED_MB.get(job["agent"], DEFAULT_NEED_MB)
     lock = GPU_LOCKS.setdefault(str(gpu), threading.Lock())
-    lock.acquire()
-    while free_mb(gpu) < need:
-        time.sleep(15)
-    threading.Timer(LOAD_HOLD_S, lock.release).start()
+    t0, warned = time.time(), False
+    with lock:
+        while True:
+            hold = GPU_LAST_START.get(str(gpu), 0.0) + LOAD_HOLD_S - time.time()
+            if hold > 0:
+                time.sleep(hold)
+                continue
+            free = free_mb(gpu)
+            if free >= need:
+                GPU_LAST_START[str(gpu)] = time.time()
+                return
+            if not warned and time.time() - t0 > 300:
+                log(f"waiting    gpu{gpu} {free} MiB free, {need} needed, for {job['agent']} ({int(time.time() - t0)}s)")
+                warned = True
+            time.sleep(15)
 
 
 def out_of_memory(job):
@@ -108,7 +123,7 @@ def out_of_memory(job):
 def run(job, gpu, args, log):
     os.makedirs(job["episode"], exist_ok=True)
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONPATH=f"{REPO}/sim:{REPO}")
-    wait_for_memory(job, gpu)
+    wait_for_memory(job, gpu, log)
     t0 = time.time()
     with open(os.path.join(job["episode"], "run.log"), "w") as f:
         p = subprocess.Popen(command(job, args), cwd=REPO, env=env, stdout=f, stderr=subprocess.STDOUT,
