@@ -13,6 +13,15 @@ import os
 import open3d as o3d
 import torch
 from scipy.spatial.transform import Rotation as SCR
+from scipy.spatial import cKDTree
+
+# _calculate_drivable_area_compliance masks only the ground points that can lie in a waypoint's
+# footprint (within half its diagonal) instead of rotating the whole cloud for each waypoint: the
+# counts, so the score, are bitwise identical on this CPU path (with the cropped clouds of
+# closed_loop.py --outputs scoring, the whole scorer went from 53.2 s to 3.2 s an episode on average
+# over 40 past episodes). _calculate_no_collision likewise skips the polygon test of an obstacle too far
+# to touch the ego. False runs the original code for both.
+FAST_SCORING = True
 
 # ego_box's z is the camera plane (HUGSimEnv.vt[1], one camera height above the road), so the
 # box extends from there down to the road, over the heights HUGSimEnv's own collision check covers.
@@ -218,11 +227,22 @@ class ScoreCalculator:
     def _calculate_drivable_area_compliance(self, ground, traj, vehicle_width, vehicle_length):
         m, n = 2, 2
         dac = 1.0
+        if FAST_SCORING:
+            # One tree per ground array (non-finite points are in no cell, and cKDTree refuses them).
+            if getattr(self, '_dac_ground', None) is not ground:
+                finite = ground[np.isfinite(ground).all(axis=1)]
+                self._dac_ground, self._dac_finite, self._dac_tree = ground, finite, cKDTree(finite)
+            reach = 0.5 * float(np.hypot(vehicle_length, vehicle_width)) + 0.05
         for traj_i, (x, y, yaw) in enumerate(traj):
             cnt = 0
             c, s = np.cos(yaw), np.sin(yaw)
             R = np.array([[c, -s], [s, c]])
-            ground_in_ego = (np.linalg.inv(R) @ (ground + np.array([-x, -y])).T).T
+            if FAST_SCORING:
+                # A point further than half the diagonal from (x, y) is outside the footprint.
+                near = self._dac_finite[sorted(self._dac_tree.query_ball_point([x, y], reach))]
+            else:
+                near = ground
+            ground_in_ego = (np.linalg.inv(R) @ (near + np.array([-x, -y])).T).T
             x_bins = np.linspace(-vehicle_length/2, vehicle_length/2, m+1)
             y_bins = np.linspace(-vehicle_width/2, vehicle_width/2, n+1)
             for xi in range(m):
@@ -392,11 +412,19 @@ class ScoreCalculator:
             if bk_collision:
                 print(f"collision with background detected! @ timestep{idx}")
                 return 0.0
-            ego_poly = create_rectangle(ego_x, ego_y, ego_w, ego_l, ego_yaw)
+            ego_poly = None
             obs_list = obs_lists[idx if idx < len(obs_lists) else -1]
             for obs in obs_list:
                 # obs = (x,y,z,w,l,h,yaw)
                 obs_x, obs_y, _, obs_w, obs_l, _, obs_yaw = obs
+                # Two rectangles whose centres are further apart than their circumscribed circles'
+                # radii together cannot intersect: skip building the shapely polygons for them
+                # (create_rectangle is most of the time left once the clouds are small).
+                if FAST_SCORING and np.hypot(obs_x - ego_x, obs_y - ego_y) > \
+                        0.5 * np.hypot(ego_w, ego_l) + 0.5 * np.hypot(obs_w, obs_l) + 1e-3:
+                    continue
+                if ego_poly is None:
+                    ego_poly = create_rectangle(ego_x, ego_y, ego_w, ego_l, ego_yaw)
                 obs_poly = create_rectangle(
                     obs_x, obs_y, obs_w, obs_l, obs_yaw)
                 if ego_poly.intersects(obs_poly):

@@ -239,6 +239,43 @@ as `{"too_short": true}`. An agent that exits outright ends the episode before a
 so that episode has no score file at all. `score_realized.py` keeps a cached score only while it
 matches the episode's `data.pkl`, and retries everything else on every pass.
 
+`--outputs scoring` makes an episode write only what scoring needs. Each episode folder normally
+carries `ground.ply` (~11 MB) and `scene.ply` (~31 MB), the scene's Gaussians by semantics, a property
+of the scene rather than the episode, plus `infos.pkl` and a ~9 MB `video.mp4`. Both scorers only ask
+point questions about the ego's box at poses known from `data.pkl` (the planned poses and the
+poses displaced by velocity x 0.5 s and 1.0 s for HUGSIM's, the recorded poses and their 0.2 s
+propagations to 1 s for the realized one), so `sim/utils/score_corridor.py` keeps the points within
+half the footprint diagonal plus 0.5 m of those poses (~3 MB); no other point can matter to a score.
+With `--outputs scoring` the env writes no clouds, there is no `infos.pkl`, `--video` defaults to
+`off` (an explicit `--video` wins), the cropped clouds are written as `ground.ply` / `scene.ply` (so
+`score_realized.py` still rescores the folder), and both scorers run on those in-memory arrays. The
+scores are identical in practice to `--outputs full`, the default, which writes everything as before
+(the CPU drivable-area path is bitwise identical; the GPU background check is identical up to float32
+rounding of a point lying on a box face, since a cuBLAS matmul over the subset can round 1 ulp
+differently from one over the full cloud: no difference was seen over 20,736 box queries). HUGSIM's
+drivable-area check also looks only at the ground points near each waypoint (`FAST_SCORING` in
+`score_calculator.py`, bitwise identical; set it to `False` for the original full-cloud loop).
+Together with the cropped clouds, HUGSIM's scorer went from 53.2 s to 3.2 s an episode on average
+over 40 past episodes.
+
+To evaluate agents on a whole set, `run_benchmark.py` runs the episodes in parallel, several per
+GPU, each with `--outputs scoring --realized_score` (agents in `agents/registry.py` in-process),
+skips the ones already scored, and retries a failure once. A start that finds no room on its GPU
+(it waits for the job's memory to be free, at most 30 minutes, then releases the GPU and requeues
+the job) or an episode that dies out of memory is requeued without using that retry, up to 5 times.
+An agent that crashed of the GPU's memory is re-run too (its crash record is dropped, also from a
+run made before this existed); on the last attempt the record is kept, with `"gpu_crash": true`. An
+exception in the runner itself requeues the job as a failed attempt. An episode folder that is a
+symlink (reused from another set) counts as done if its target holds a `realized_score.json` and is
+otherwise skipped, never run into. `--out` and `--data` reach the episodes (as `HUGSIM_OUT` /
+`HUGSIM_DATA`). `aggregate_benchmark.py` then prints the three HD-Score variants per agent and
+dataset, counting an agent's crash (or exit) as 0 and listing the episodes that produced no score:
+
+```bash
+python run_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436 --slots 0:14 1:4
+python aggregate_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436
+```
+
 ## Environment
 
 The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read
