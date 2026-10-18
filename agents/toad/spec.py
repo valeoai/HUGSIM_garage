@@ -1,5 +1,5 @@
 """The :class:`AgentSpec` of TOAD (valeoai/TOAD, arXiv 2606.07170): DrivoR with CEM refinement of the
-scorer's best proposal, as hyzhou404/NAVSIM's ``dynamo_e2e.py`` client runs it (``CONFIG_NAME =
+scorer's best proposal, as our ``dynamo_e2e.py`` HUGSIM client (in our NAVSIM checkout) runs it (``CONFIG_NAME =
 "drivor"``): DrivoR's released NAVSIM-v1 checkpoint ``drivor_Nav1_25epochs.pth``, the PDMS scorer
 weights and CEM on, all the defaults of ``.._drivor.config``. Two CEM settings of that client differ
 from TOAD's released code: the update smoothing ``cem_alpha`` is 0.7 (1.0 there) and sampled controls

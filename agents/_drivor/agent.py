@@ -1,7 +1,7 @@
 """DrivoR agent, shared by ``drivor`` and ``toad``: checkpoint loading and inference.
 
 From valeoai/DrivoR ``navsim/agents/drivoR/drivor_agent.py`` and NAVSIM's
-``navsim/agents/abstract_agent.py`` (``compute_trajectory``), as in hyzhou404/NAVSIM. The training
+``navsim/agents/abstract_agent.py`` (``compute_trajectory``), as in our NAVSIM checkout. The training
 code of the agent (losses, optimisers, metric caches, ray, progress bars) is dropped.
 """
 

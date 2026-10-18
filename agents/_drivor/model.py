@@ -2,7 +2,7 @@
 
 The DrivoR model is from valeoai/DrivoR (``navsim/agents/drivoR/drivor_model.py`` at fc6e5aa); the CEM
 refinement (``cem_refine`` and its helpers) is TOAD's (valeoai/TOAD), both as the copy in
-hyzhou404/NAVSIM's working tree ran them for HUGSIM. That copy's CEM differs from TOAD's released
+our NAVSIM checkout ran them for HUGSIM. That copy's CEM differs from TOAD's released
 code (``drivor_cem_portable/`` at cfa88e0) in two settings: ``cem_alpha`` 0.7 (1.0 there) and a
 control clamp of 5.0 times the kinematic limits (1.5 there). Changes: the LiDAR branch, the training-only
 scorer heads and the per-forward prints are dropped, and the ``getattr(cfg, name, default)`` reads

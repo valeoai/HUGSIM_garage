@@ -3,7 +3,7 @@
 ``agents/toad`` uses these defaults; ``agents/drivor`` turns CEM off, as the DrivoR paper's HUGSIM
 evaluation ran it (see its ``spec.py``).
 
-The values are those hydra resolved from hyzhou404/NAVSIM's ``config/common/agent/drivoR.yaml``
+The values are those hydra resolved from ``config/common/agent/drivoR.yaml`` in our NAVSIM checkout
 (valeoai/DrivoR) for ``agent.config``. Training-only keys, the LiDAR branch (``lidar_pc: []`` in the
 shipped config) and the pretrained-weight paths (the checkpoint carries the whole backbone) are
 dropped. The CEM keys the original read with ``getattr(cfg, key, default)`` are fields here, with

@@ -32,9 +32,9 @@ NAVSIM-family code).
 `drivor`, `toad` and `toad_release` run the same model and checkpoint, and differ only in their settings:
 
 * **`drivor`** is DrivoR as the DrivoR paper (arXiv 2601.05083, Table 2) evaluated it on HUGSIM: the
-  PDMS scorer weights (NC 1, DAC 1, DDC 0, TTC 5, EP 5, comfort 2) and no CEM refinement, as NAVSIM's
-  `dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml` ran it.
-* **`toad`** is what NAVSIM's `dynamo_e2e.sh` launches (`CONFIG_NAME = "drivor"`, not Dynamo):
+  PDMS scorer weights (NC 1, DAC 1, DDC 0, TTC 5, EP 5, comfort 2) and no CEM refinement, as
+  `dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml` in our NAVSIM checkout ran it.
+* **`toad`** is what our `dynamo_e2e.sh` HUGSIM client launches (`CONFIG_NAME = "drivor"`, not Dynamo):
   DrivoR with CEM refinement of the scorer's best proposal and the PDMS weights, which is TOAD.
   It is what `drivor` ran before the two were separated. Two of its CEM settings differ from TOAD's
   released code: the update smoothing `cem_alpha` is 0.7 (1.0 there) and sampled controls are
@@ -87,7 +87,7 @@ Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
 | `uniad/uniad_base_e2e.pth` | [OpenDriveLab/UniAD v1.0.1 release](https://github.com/OpenDriveLab/UniAD/releases/download/v1.0.1/uniad_base_e2e.pth) |
 | `vad/VAD_base.pth` | VAD-Base from [hustvl/VAD](https://github.com/hustvl/VAD)'s README |
 | `ltf/ltf_seed_0.ckpt` | [autonomousvision/navsim_baselines, `ltf/`](https://huggingface.co/autonomousvision/navsim_baselines/tree/main/ltf) |
-| `drivor/drivor_Nav1_25epochs.pth` | [valeoai/DrivoR's `model_weights` release](https://github.com/valeoai/DrivoR/releases/download/model_weights/drivor_Nav1_25epochs.pth) (the NAVSIM-v1 model; sha256 `e1a678f2…`). NAVSIM's `ckpts/final/nav3.ckpt`, which its `dynamo_e2e.py` loaded, holds the same 467 tensors in another container |
+| `drivor/drivor_Nav1_25epochs.pth` | [valeoai/DrivoR's `model_weights` release](https://github.com/valeoai/DrivoR/releases/download/model_weights/drivor_Nav1_25epochs.pth) (the NAVSIM-v1 model; sha256 `e1a678f2…`). `ckpts/final/nav3.ckpt` of our NAVSIM checkout, which our `dynamo_e2e.py` loaded, holds the same 467 tensors in another container |
 | `toad/drivor_Nav1_25epochs.pth`, `toad_release/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` |
 | `gtrs/gtrs_dense_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_dense_vov.ckpt) |
 | `gtrs/16384.npy` | the trajectory vocabulary, `traj_final/16384.npy` in [NVlabs/GTRS](https://github.com/NVlabs/GTRS) |

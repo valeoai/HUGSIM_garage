@@ -1,5 +1,6 @@
-"""What ``drivor`` and ``toad`` share on the HUGSIM side: the ``parse_raw`` of hyzhou404/NAVSIM's
-``dynamo_e2e.py`` client and the rule that reports which proposal was driven.
+"""What ``drivor`` and ``toad`` share on the HUGSIM side: the ``parse_raw`` of our ``dynamo_e2e.py``
+client (in our NAVSIM checkout, not in hyzhou404/NAVSIM) and the rule that reports which proposal
+was driven.
 """
 
 import numpy as np
