@@ -7,7 +7,7 @@ export HUGSIM_OUT=/home/yyin5/mack/yyin5/HUGSIM/outputs/benchmark_drivor_mpc
 export NUSCENES_RAW=/home/yyin5/scania/datasets_scania_raw/nuscenes
 # The baseline agents under agents/ read their weights from here (agents/README.md, Checkpoints).
 export HUGSIM_AGENT_CKPTS=/home/yyin5/workspace/hugsim_agent_ckpts
-# uniad, vad, ltf, drivor, toad, gtrs, ztrs and gtrs_aug launch from agents/ by default; a
+# uniad, vad, ltf, drivor, toad, toad_release, gtrs, ztrs and gtrs_aug launch from agents/ by default; a
 # HUGSIM_AD_<NAME> exported here would replace that launcher. The agents below live elsewhere.
 export HUGSIM_AD_PICTURA=/home/yyin5/workspace/Pictura-dev/scripts/hugsim/hugsim_e2e.sh
 export HUGSIM_AD_DYNAMO=/home/yyin5/workspace/NAVSIM/dynamo_e2e.sh

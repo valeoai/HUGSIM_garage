@@ -5,6 +5,7 @@ vad_path: ${oc.env:HUGSIM_AD_VAD,agents/vad/launch.sh}
 ltf_path: ${oc.env:HUGSIM_AD_LTF,agents/ltf/launch.sh}
 drivor_path: ${oc.env:HUGSIM_AD_DRIVOR,agents/drivor/launch.sh}
 toad_path: ${oc.env:HUGSIM_AD_TOAD,agents/toad/launch.sh}
+toad_release_path: ${oc.env:HUGSIM_AD_TOAD_RELEASE,agents/toad_release/launch.sh}
 dynamo_path: ${oc.env:HUGSIM_AD_DYNAMO}
 gtrs_path: ${oc.env:HUGSIM_AD_GTRS,agents/gtrs/launch.sh}
 ztrs_path: ${oc.env:HUGSIM_AD_ZTRS,agents/ztrs/launch.sh}

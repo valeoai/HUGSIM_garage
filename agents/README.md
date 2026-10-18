@@ -11,7 +11,8 @@ bring an environment of their own.
 | `vad` | VAD (base) | `vad/` | `_mmdet3d/pixi.toml` | no |
 | `ltf` | Latent TransFuser | `ltf/` | the simulator's | yes |
 | `drivor` | [DrivoR](https://github.com/valeoai/DrivoR) (4 cameras), as its paper evaluated it on HUGSIM | `drivor/` | the simulator's | yes |
-| `toad` | [TOAD](https://github.com/valeoai/TOAD): DrivoR with CEM refinement | `toad/` | the simulator's | yes |
+| `toad` | [TOAD](https://github.com/valeoai/TOAD): DrivoR with CEM refinement, as the HUGSIM client ran it | `toad/` | the simulator's | yes |
+| `toad_release` | TOAD with the CEM settings of its released code | `toad_release/` | the simulator's | yes |
 | `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `gtrs/` | the simulator's | yes |
 | `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `ztrs/` | the simulator's | yes |
 | `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
@@ -28,7 +29,7 @@ distinguishes it), the DrivoR model that `drivor` and `toad` both build in `_dri
 imports another, so deleting one leaves the rest working (`_navsim/LICENSE` is the Apache-2.0 text of the
 NAVSIM-family code).
 
-`drivor` and `toad` run the same model and checkpoint, and differ only in their settings:
+`drivor`, `toad` and `toad_release` run the same model and checkpoint, and differ only in their settings:
 
 * **`drivor`** is DrivoR as the DrivoR paper (arXiv 2601.05083, Table 2) evaluated it on HUGSIM: the
   PDMS scorer weights (NC 1, DAC 1, DDC 0, TTC 5, EP 5, comfort 2) and no CEM refinement, as NAVSIM's
@@ -38,6 +39,8 @@ NAVSIM-family code).
   It is what `drivor` ran before the two were separated. Two of its CEM settings differ from TOAD's
   released code: the update smoothing `cem_alpha` is 0.7 (1.0 there) and sampled controls are
   clamped at 5.0 times the kinematic limits (1.5 there).
+* **`toad_release`** is TOAD with its released code's CEM settings (`cem_alpha` 1.0, a 1.5 clamp,
+  `cem_control_margin` in `_drivor/config.py`); the rest, checkpoint included, is `toad`'s.
 
 `dynamo` stays an external launcher (`HUGSIM_AD_DYNAMO`).
 
@@ -60,7 +63,7 @@ naming its log, rather than leaving the simulator waiting on a pipe.
 
 ### In-process
 
-The six agents that run in the simulator's environment can also be called in its process,
+The seven agents that run in the simulator's environment can also be called in its process,
 with no launcher and no pipes:
 
 ```bash
@@ -85,7 +88,7 @@ Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
 | `vad/VAD_base.pth` | VAD-Base from [hustvl/VAD](https://github.com/hustvl/VAD)'s README |
 | `ltf/ltf_seed_0.ckpt` | [autonomousvision/navsim_baselines, `ltf/`](https://huggingface.co/autonomousvision/navsim_baselines/tree/main/ltf) |
 | `drivor/drivor_Nav1_25epochs.pth` | [valeoai/DrivoR's `model_weights` release](https://github.com/valeoai/DrivoR/releases/download/model_weights/drivor_Nav1_25epochs.pth) (the NAVSIM-v1 model; sha256 `e1a678f2…`). NAVSIM's `ckpts/final/nav3.ckpt`, which its `dynamo_e2e.py` loaded, holds the same 467 tensors in another container |
-| `toad/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` |
+| `toad/drivor_Nav1_25epochs.pth`, `toad_release/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` |
 | `gtrs/gtrs_dense_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_dense_vov.ckpt) |
 | `gtrs/16384.npy` | the trajectory vocabulary, `traj_final/16384.npy` in [NVlabs/GTRS](https://github.com/NVlabs/GTRS) |
 | `ztrs/ztrs_vov.ckpt` | [Zzxxxxxxxx/ZTRS](https://huggingface.co/Zzxxxxxxxx/ZTRS/blob/main/ztrs_vov.ckpt) |

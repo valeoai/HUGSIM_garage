@@ -448,12 +448,11 @@ class DrivoRModel(nn.Module):
         last_omega = _wrap_angle(h_curr - h_prev) / dt
         return last_ax, last_omega
 
-    @staticmethod
-    def _clamp_controls(controls: torch.Tensor) -> torch.Tensor:
+    def _clamp_controls(self, controls: torch.Tensor) -> torch.Tensor:
         """Clamp (a, omega) to slightly-relaxed kinematic envelopes. Keeps the
         rollout in a sane regime even when the Gaussian samples extreme values.
         """
-        margin = 5.0
+        margin = self._config.cem_control_margin  # 5.0 in the HUGSIM client, 1.5 in TOAD's release
         a = controls[..., 0].clamp(_MIN_LON_ACCEL * margin, _MAX_LON_ACCEL * margin)
         omega = controls[..., 1].clamp(
             -_MAX_ABS_YAW_RATE * margin, _MAX_ABS_YAW_RATE * margin

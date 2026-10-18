@@ -83,6 +83,7 @@ class DrivoRConfig:
     cem_comfort_weight: float = 0.05
     cem_anchor_weight: float = 0.5
     cem_init_std_scale: float = 0.5
+    cem_control_margin: float = 5.0  # sampled controls are clamped at this times the kinematic limits
 
     image_size: Tuple[int, int] = (1148, 672)
     image_backbone: ImageBackboneConfig = field(default_factory=ImageBackboneConfig)
