@@ -266,10 +266,13 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full'):
 
 #: What each variable the sim configs interpolate is for, shown when one is missing.
 ENV_VARS = {
-    "HUGSIM_DATA": "the installed data tree (HUGSIM-public / HUGSIM-private)",
+    "HUGSIM_DATA": "the data tree holding HUGSIM/ (3DRealCar, ss/scenes, ss/scenarios/<set>); build it with prepare_benchmark.py",
     "HUGSIM_OUT": "where episode folders are written (or pass --output_dir)",
     "NUSCENES_RAW": "the raw nuScenes release, read only by scenarios with load_HD_map: true",
 }
+
+#: The benchmark sets prepare_benchmark.py builds; episodes are filed under the one a scenario is in.
+SCENARIO_SETS = ("prechallenge345", "official436")
 
 ENV_REF = re.compile(r"\$\{oc\.env:([A-Z0-9_]+)\}")
 
@@ -316,8 +319,9 @@ if __name__ == "__main__":
              "agent or a variant of one needs no config file and no code change here.")
     parser.add_argument(
         '--output_dir', default=None,
-        help="Overrides base.output_dir. The agent name is still appended, as it is for the "
-             "config value, so the episode folder is named the same way either way.")
+        help="Overrides base.output_dir and is used as given: no <set> folder is inserted (it is "
+             "for the config value). The agent name is still appended, as it is for the config "
+             "value, so end it like one, e.g. /out/nuscenes_ for /out/nuscenes_<agent>/.")
     parser.add_argument(
         '--obs_mode', default=None, choices=OBS_MODES,
         help="What the agent is handed: 'rgb', the Gaussian render; 'vector', the scene as "
@@ -373,7 +377,14 @@ if __name__ == "__main__":
         needed.append('HD_map.path')
     check_env(cfg.base, needed)
 
-    cfg.base.output_dir = (args.output_dir or cfg.base.output_dir) + args.ad
+    output_dir = args.output_dir
+    if output_dir is None:
+        # .../ss/scenarios/<set>/<dataset>/<scenario>.yaml: a scenario in both benchmark sets
+        # must not overwrite the other set's run, so the set joins the folder name.
+        scenario_set = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(args.scenario_path))))
+        head, tail = os.path.split(cfg.base.output_dir)
+        output_dir = os.path.join(head, scenario_set, tail) if scenario_set in SCENARIO_SETS else cfg.base.output_dir
+    cfg.base.output_dir = output_dir + args.ad
     # An agent declares its mode next to its launcher, base.<ad>_obs_mode, and --obs_mode
     # overrides it. The opt-in it replaces is refused rather than ignored: ignored, it would
     # quietly run that agent on the Gaussian render.

@@ -1,5 +1,7 @@
 # Roots the sim configs interpolate. Source this, or set them yourself.
 # The configs hold no absolute paths, so each machine points them at its own tree.
+# Must be a tree built by prepare_benchmark.py (HUGSIM/3DRealCar, HUGSIM/ss/scenes, HUGSIM/ss/scenarios/<set>);
+# an install from before that layout must be migrated first (prepare_benchmark.py --from-install).
 export HUGSIM_DATA=/home/yyin5/mack/datasets_mack_raw
 export HUGSIM_OUT=/home/yyin5/mack/yyin5/HUGSIM/outputs/benchmark_drivor_mpc
 export NUSCENES_RAW=/home/yyin5/scania/datasets_scania_raw/nuscenes

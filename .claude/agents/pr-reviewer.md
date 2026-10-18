@@ -52,12 +52,12 @@ status), an interface for plugging in agents, and `sim/scene_export/`. `git -C <
   `route` in the ego frame of `ego_box` (x forward, y left, z up, z = 0 on the road), and in `raster`
   `info['raster']` is the `{view, rig}` the agent is asked to draw. An agent refuses a mode by answering
   `None`, then reading `'Done'`; one that exits instead leaves the sim blocked on a FIFO.
-- An episode folder, `<dataset>_<agent>/<scene>_<difficulty>`, holds `data.pkl` (every frame, enough to
+- An episode folder, `<set>/<dataset>_<agent>/<scene>_<difficulty>` (`<set>` is `official436` or `prechallenge345`, read off the scenario's path; absent for a scenario outside those folders), holds `data.pkl` (every frame, enough to
   score offline), `infos.pkl`, `video.mp4`, `eval.json` (absent with `--skip-native-eval`), `ground.ply`,
   `scene.ply`, `output.txt` (the AD's log). `closed_loop.py` removes an earlier run's `eval.json` and
   `video.mp4` from it just before launching the agent, and refuses a launcher that is not a file.
   `get_score.py` aggregates `eval.json`s; `run_dataset.sh` skips a scenario whose `eval.json` exists.
-- `configs/sim/` has `<dataset>_base.yaml` and `<dataset>_private.yaml` per dataset (nuscenes, kitti360,
+- `configs/sim/` has `<dataset>_base.yaml` per dataset (nuscenes, kitti360,
   pandaset, waymo), plus `kinematic.yaml` (dt 0.25 s, the published operating point) and
   `kinematic_10hz.yaml` (dt 0.1 s). There are no per-variant configs: a variant (another mode, dt or
   checkpoint) runs under an agent name of its own, its launcher from `HUGSIM_AD_<NAME>` and its flags from
@@ -95,7 +95,7 @@ status), an interface for plugging in agents, and `sim/scene_export/`. `git -C <
 - **Configs hold no absolute paths.** Every root is `${oc.env:VAR}`. A new variable goes in `ENV_VARS` in
   `closed_loop.py` and in the README's Environment table, and `check_env` requires only what a run reads.
   An agent is added with `--ad_path` or `HUGSIM_AD_<NAME>`, with no config file and no `closed_loop.py`
-  change; a key added to one base config usually belongs in every dataset's base and private config.
+  change; a key added to one base config usually belongs in every dataset's base config.
 - **What an agent is handed is a declared mode** (`base.<ad>_obs_mode` / `--obs_mode`, `rgb` by default):
   the scene export is built only in `vector` and `raster`, which render no camera per step (`video.mp4`
   is rendered for its own sake, as `--video` says). The mode and the raster request are checked before the
@@ -142,7 +142,7 @@ Review the PR through your lens only; other reviewers cover the other lenses. Le
 - **integration**: every caller and callee of what changed, across the repo and beyond it. The FIFO
   protocol and `info`'s keys that the AD sides read (`obs_mode`, `raster`, `scene_export` included); the
   launcher's arguments; the episode folder's files that `get_score.py`, `run_dataset.sh`'s resume and
-  offline scorers read; every dataset's base and private config a new key must reach, and
+  offline scorers read; every dataset's base config a new key must reach, and
   `kinematic_10hz.yaml`; the gym registration; `sim/` as the installed `hugsim-env` package (new modules
   must be importable from it); `run_*.sh`, `HUGSIM_ARGS` and `run_dataset.sh`'s guard; and the Drive_gym imports
   listed above (signatures, return shapes, semantics), plus its `plan_score.py` parity when the scorer
@@ -164,7 +164,7 @@ Review the PR through your lens only; other reviewers cover the other lenses. Le
   PR promises (title, body, linked issues in `context.md`, commit messages) with what the diff does. Look
   for each promised item that is missing or half done; `TODO`, `FIXME`, stubs, `NotImplementedError` and
   `pass` placeholders the PR adds; flags, options and config keys added but not wired through (argparse,
-  every dataset's base and private config, `run_*.sh`, `ENV_VARS`); behaviour changed with no README update (the
+  every dataset's base config, `run_*.sh`, `ENV_VARS`); behaviour changed with no README update (the
   fork-changes table, Agents, Environment); an upstream PR the body promises but does not link; findings
   from `prior.md` still open, skipped or PLAUSIBLE. Also list the runs that only a cluster can do and that the
   PR needs before merge (a closed-loop episode at dt 0.25 and, if timing changed, at dt 0.1; a before/after
