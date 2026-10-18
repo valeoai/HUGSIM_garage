@@ -60,6 +60,8 @@ height; reactive agents gain, because it was also inventing collisions overhead.
   scene as geometry, `sim/scene_export/` (typed road segments, actor cuboids, the route), and
   asked to read it as it is (`vector`) or to draw it with its own renderer (`raster`). See
   [Observation modes](#observation-modes).
+* **The realized score, TerraTransfer's closed-loop HD-Score**, beside HUGSIM's own `hdscore`:
+  `--realized_score` per episode, `score_realized.py` for past runs. See [Scoring](#scoring).
 * **Extra flags from the sweep scripts.** `run_dataset.sh` and `run_single.sh` append
   `HUGSIM_ARGS`, split on whitespace, to every `closed_loop.py` call. `run_dataset.sh` refuses
   `--output_dir`, `--ad`, `--base_path` and `--scenario_path` there, since they pick the episode
@@ -196,6 +198,46 @@ HUGSIM_AD_PICTURA_10HZ=/path/to/Pictura-dev/hugsim_e2e.sh HUGSIM_ARGS="--obs_mod
 folder `run_dataset.sh` checks for `eval.json`. `--skip-native-eval` writes no `eval.json`, so
 that check never sees a finished scene: run one worker then, not a forward and reverse pair. Calling `closed_loop.py` directly,
 `--ad pictura_vector --ad_path ...` and `--output_dir` both work.
+
+## Scoring
+
+Two scores, for two questions:
+
+| | what it judges | where |
+|---|---|---|
+| `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written at the end of every episode unless `--skip-native-eval` is passed or HUGSIM's scorer fails on it (`get_score.py` averages them) |
+| the realized score, TerraTransfer's closed-loop HD-Score ([arXiv 2606.17386](https://arxiv.org/abs/2606.17386), App. B) | the **realized** trajectory: per 0.5 s keyframe NC and DAC at the ego's pose, TTC propagated 1 s ahead, comfort over the next 1 s | `realized_score.json` with `--realized_score`, or `score_realized.py` for past runs |
+
+`hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
+comparable with TerraTransfer, and with any agent that, like its jerk policy, has no
+multi-second plan to score. It reads only what an episode already saves, so every past run can
+be rescored:
+
+```bash
+python score_realized.py --runs official436/nuscenes_uniad official436/nuscenes_vad --out realized.json   # under $HUGSIM_OUT
+```
+
+`realized_score.json` (and each entry of `score_realized.py`'s output) carries the three HD-Score
+variants side by side:
+
+| key | score | route completion |
+|---|---|---|
+| `hdscore` | HUGSIM's, of the planned trajectory, copied from `eval.json` (`null` without one, e.g. `--skip-native-eval`) | HUGSIM's |
+| `hdscore_realized` | TerraTransfer's, of the realized trajectory | HUGSIM's index fraction, `rc`: the ICLR 2027 submission's choice, comparable with HUGSIM's published numbers |
+| `hdscore_realized_arclength` | the same | arc-length fraction of the recorded track, `rc_arclength` (arXiv v1/v2) |
+
+The two realized variants differ only by route completion; the index one is usually the higher
+(about 1.14x on average). The comfort term is only comparable at the same simulator step: the window is fixed in
+seconds, but jerk is a third finite difference at dt, and the paper runs at dt = 0.1 s
+(`configs/sim/kinematic_10hz.yaml`). `sim/utils/realized_score.py` has the definitions.
+
+Not every episode gets a score. With `--realized_score`, an episode the agent ended by answering
+`None` is recorded as `{"crashed": true}`; offline, `score_realized.py` records one as crashed
+when the agent left a crash marker (`agent_crash.txt` from `agents/client.py`, or Pictura's
+`pictura_crash.json`), and one with fewer than two frames (an agent that refused at its first step)
+as `{"too_short": true}`. An agent that exits outright ends the episode before anything is written,
+so that episode has no score file at all. `score_realized.py` keeps a cached score only while it
+matches the episode's `data.pkl`, and retries everything else on every pass.
 
 ## Environment
 
