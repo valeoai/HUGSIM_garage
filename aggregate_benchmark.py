@@ -29,7 +29,11 @@ import glob
 import json
 import os
 import re
+import sys
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from run_benchmark import pre_toad_drivor, refuse_pre_toad_drivor  # noqa: E402
 
 KEYS = ("hdscore", "hdscore_realized", "hdscore_realized_arclength")
 COMPONENTS = ("nc", "dac", "ttc", "c", "rc", "rc_arclength")
@@ -56,6 +60,7 @@ def agent_died(folder):
 
 def collect(args, agent):
     rows = defaultdict(list)  # dataset -> list of (episode, status, record)
+    stale = []  # drivor episodes whose record predates agents/toad
     for ds in args.datasets:
         for sc in sorted(glob.glob(os.path.join(args.data, "HUGSIM", "ss", "scenarios", args.set, ds, "*.yaml"))):
             ep = episode_name(sc)
@@ -67,10 +72,13 @@ def collect(args, agent):
                 rec = json.load(open(path))
             except ValueError:
                 rec = None
+            if agent == "drivor" and pre_toad_drivor(rec):
+                stale.append(os.path.dirname(path))
             if not isinstance(rec, dict):  # `null` (closed_loop's old too-short record), or a torn file
                 rec = {"too_short": True}
             status = "crashed" if rec.get("crashed") else "too_short" if rec.get("too_short") else "scored"
             rows[ds].append((ep, status, rec))
+    refuse_pre_toad_drivor(stale, args.out_root, args.set)
     return rows
 
 

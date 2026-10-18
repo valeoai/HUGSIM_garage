@@ -148,7 +148,8 @@ def write_cloud(path, xyz):
     o3d.io.write_point_cloud(path, pcd)
 
 
-def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full'):
+def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full',
+                   agent_name=None):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -312,6 +313,9 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
             result = score_episode(output, cfg.model_path, clouds=clouds)
             if result is None:  # fewer than two frames, no crash: a file of `null` would read as a crash-free score
                 result = {"too_short": True}
+        # Which --ad drove: a record is otherwise only labelled by its folder name, and the name
+        # `drivor` meant TOAD before agents/toad existed (run_benchmark.py refuses those records).
+        result["agent"] = agent_name
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
@@ -549,7 +553,7 @@ if __name__ == "__main__":
     if args.in_process:
         try:
             create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score, outputs=args.outputs)
+                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -558,7 +562,7 @@ if __name__ == "__main__":
         try:
             create_gym_env(cfg, output, FifoAgent(output, process),
                            skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score, outputs=args.outputs)
+                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad)
             check_alive(process)
         except Exception:
             import traceback

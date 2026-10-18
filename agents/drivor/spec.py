@@ -1,5 +1,5 @@
 """The :class:`AgentSpec` of DrivoR (valeoai/DrivoR), as evaluated on HUGSIM in the DrivoR paper
-(arXiv 2601.05083, Table 2): the released NAVSIM-v1 checkpoint ``drivor_Nav1_25epochs.pth``, the PDMS
+(arXiv 2601.05083v2, Table 2): the released NAVSIM-v1 checkpoint ``drivor_Nav1_25epochs.pth``, the PDMS
 scorer weights, and no CEM refinement. This is the official implementation's default configuration,
 and what that evaluation's config (``dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml`` in our NAVSIM
 checkout) ran.

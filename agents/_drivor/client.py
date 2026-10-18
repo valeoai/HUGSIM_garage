@@ -1,5 +1,6 @@
-"""What ``drivor`` and ``toad`` share on the HUGSIM side: the ``parse_raw`` of our ``dynamo_e2e.py``
-client (in our NAVSIM checkout, not in hyzhou404/NAVSIM) and the rule that reports which proposal
+"""What ``drivor``, ``toad`` and ``toad_release`` share on the HUGSIM side: the ``parse_raw`` of our ``dynamo_e2e.py``
+client (in our NAVSIM checkout, not in hyzhou404/NAVSIM, but adapted from its Apache-2.0 ``ltf_e2e.py``
+and ``hugsim/dataparser.py``) and the rule that reports which proposal
 was driven.
 """
 

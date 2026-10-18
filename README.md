@@ -276,6 +276,27 @@ python run_benchmark.py --agents uniad vad ltf drivor toad gtrs ztrs gtrs_aug --
 python aggregate_benchmark.py --agents uniad vad ltf drivor toad gtrs ztrs gtrs_aug --set official436
 ```
 
+### Results written before agents/toad
+
+Until `agents/drivor` and `agents/toad` were separated, `--ad drivor` ran DrivoR with CEM
+refinement, which is now `toad` ([agents/README.md](agents/README.md)). Episodes of that time sit in
+`<set>/<dataset>_drivor/` and are TOAD's. Every `realized_score.json` written since carries the
+`--ad` that drove it (`"agent"`), and `run_benchmark.py` and `aggregate_benchmark.py` stop on a
+`drivor` record without one rather than take TOAD's drive for DrivoR's. Rename those folders, and
+re-point the symlinks a set reuses them through (`official436` episodes linked from
+`prechallenge345`, say):
+
+```bash
+cd $HUGSIM_OUT
+for set in official436 prechallenge345; do
+  for d in $set/*_drivor; do [ -e "$d" ] || [ -L "$d" ] && mv "$d" "${d%_drivor}_toad"; done
+done
+# symlinks whose target names a _drivor folder
+find . -type l -lname '*_drivor*' | while read -r l; do t=$(readlink "$l"); ln -sfn "${t/_drivor/_toad}" "$l"; done
+```
+
+then aggregate them as `toad`. The 2026-10 baseline campaign is already renamed.
+
 ## Environment
 
 The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read

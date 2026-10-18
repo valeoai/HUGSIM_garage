@@ -11,7 +11,7 @@ The agent reaches this repository through our own HUGSIM client for it, `ztrs_e2
 | Source | Licence | Files here |
 |---|---|---|
 | [ZTRS](https://github.com/woxihuanjiangguo/ZTRS) (woxihuanjiangguo) | Apache-2.0 | `config.py`, `model.py`, `agent.py`, `dp_utils.py` (vendored from ZTRS's diffusion-policy module) |
-| our NAVSIM checkout (unpublished) | ours | `spec.py` (the GTRS-family `parse_raw` is in `../_navsim/parse.py`) |
+| our NAVSIM checkout (unpublished), derived from [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM)'s `ltf_e2e.py` and `hugsim/dataparser.py` | Apache-2.0 | `spec.py` (the GTRS-family `parse_raw` is in `../_navsim/parse.py`) |
 
 Written for this port: `spec.py` (the checkpoint, build function and output rule), `launch.sh`. The shared files it imports from `../_navsim/` are listed in `../_navsim/NOTICE.md`.
 

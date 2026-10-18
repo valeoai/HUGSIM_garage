@@ -18,7 +18,7 @@ class DrivoRAgent(torch.nn.Module):
     def __init__(self, config: DrivoRConfig, name: str = 'drivor'):
         super().__init__()
         self._config = config
-        self._name = name  # the --ad name, for messages: drivor or toad
+        self._name = name  # the --ad name, for messages: drivor, toad or toad_release
         self._drivor_model = DrivoRModel(config)
         self._feature_builder = DrivoRFeatureBuilder(config)
 

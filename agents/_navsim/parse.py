@@ -6,7 +6,8 @@ LTF/GTRS/ZTRS/GTRS-Aug (velocity and acceleration rotated by the steering angle,
 fixed to "straight"), the ``parse_raw`` of ``gtrs_e2e.py``/``ztrs_e2e.py``/``gtrs_aug_e2e.py`` (byte-identical
 in the three clients) and the choice read-out of the vocabulary scorers. The LTF pieces follow
 hyzhou404/NAVSIM's ``hugsim/dataparser.py`` and ``ltf_e2e.py`` (Apache-2.0); the GTRS-family ones our
-own clients, kept in our NAVSIM checkout; see ``NOTICE.md``.
+own clients, kept in our NAVSIM checkout and adapted from those same two files (so Apache-2.0 too); see
+``NOTICE.md``.
 """
 
 import cv2
