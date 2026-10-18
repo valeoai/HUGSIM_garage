@@ -82,8 +82,8 @@ Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
 | `uniad/uniad_base_e2e.pth` | [OpenDriveLab/UniAD v1.0.1 release](https://github.com/OpenDriveLab/UniAD/releases/download/v1.0.1/uniad_base_e2e.pth) |
 | `vad/VAD_base.pth` | VAD-Base from [hustvl/VAD](https://github.com/hustvl/VAD)'s README |
 | `ltf/ltf_seed_0.ckpt` | [autonomousvision/navsim_baselines, `ltf/`](https://huggingface.co/autonomousvision/navsim_baselines/tree/main/ltf) |
-| `drivor/nav3.ckpt` | the DrivoR checkpoint NAVSIM's `dynamo_e2e.py` loaded (`ckpts/final/nav3.ckpt`); [valeoai/DrivoR](https://github.com/valeoai/DrivoR) publishes its weights in its GitHub releases |
-| `toad/nav3.ckpt` | the same file as `drivor/nav3.ckpt` |
+| `drivor/nav3.ckpt` | `drivor_Nav1_25epochs.pth` of [valeoai/DrivoR's `model_weights` release](https://github.com/valeoai/DrivoR/releases/tag/model_weights) (the NAVSIM-v1 model), saved under another container: all 467 tensors identical. It is the file NAVSIM's `dynamo_e2e.py` loaded (`ckpts/final/nav3.ckpt`) |
+| `toad/nav3.ckpt` | the same weights as `drivor/nav3.ckpt` |
 | `gtrs/gtrs_dense_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_dense_vov.ckpt) |
 | `gtrs/16384.npy` | the trajectory vocabulary, `traj_final/16384.npy` in [NVlabs/GTRS](https://github.com/NVlabs/GTRS) |
 | `ztrs/ztrs_vov.ckpt` | [Zzxxxxxxxx/ZTRS](https://huggingface.co/Zzxxxxxxxx/ZTRS/blob/main/ztrs_vov.ckpt) |
