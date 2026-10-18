@@ -1,7 +1,7 @@
 """GTRS-Aug agent: checkpoint loading and inference with the teacher network.
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_aug/gtrs_aug_agent.py`` (``initialize`` and
-``get_trajectory_from_agent_input``), as in hyzhou404/NAVSIM. The losses, optimisers, callbacks and
+``get_trajectory_from_agent_input``), as in our NAVSIM checkout. The losses, optimisers, callbacks and
 the augmentation metadata loaded when training are dropped.
 """
 

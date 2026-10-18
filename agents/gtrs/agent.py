@@ -1,7 +1,7 @@
 """GTRS agent: checkpoint loading and inference.
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_dense/gtrs_agent.py`` (``initialize`` and
-``get_trajectory_from_agent_input``), as in hyzhou404/NAVSIM. The losses, optimisers and callbacks
+``get_trajectory_from_agent_input``), as in our NAVSIM checkout. The losses, optimisers and callbacks
 are dropped.
 """
 

@@ -4,8 +4,9 @@ Each agent's ``spec.py`` holds its own ``parse``; what two or more of them use i
 tables, the resize to what the models were fed, the ``AgentInput`` assembly, the ego-status quirk of
 LTF/GTRS/ZTRS/GTRS-Aug (velocity and acceleration rotated by the steering angle, the driving command
 fixed to "straight"), the ``parse_raw`` of ``gtrs_e2e.py``/``ztrs_e2e.py``/``gtrs_aug_e2e.py`` (byte-identical
-in the three clients) and the choice read-out of the vocabulary scorers. From hyzhou404/NAVSIM
-(Apache-2.0), see ``NOTICE.md``.
+in the three clients) and the choice read-out of the vocabulary scorers. The LTF pieces follow
+hyzhou404/NAVSIM's ``hugsim/dataparser.py`` and ``ltf_e2e.py`` (Apache-2.0); the GTRS-family ones our
+own clients, kept in our NAVSIM checkout; see ``NOTICE.md``.
 """
 
 import cv2

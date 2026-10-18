@@ -1,7 +1,7 @@
 """VoVNet-99 (eSE) image backbone of GTRS, ZTRS and GTRS-Aug.
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/backbones/vov.py`` (VoVNet of DD3D / BEVFormer), as
-in hyzhou404/NAVSIM. ``init_weights`` (which loaded the ``dd3d_det_final.pth`` pretrained backbone)
+in our NAVSIM checkout. ``init_weights`` (which loaded the ``dd3d_det_final.pth`` pretrained backbone)
 is dropped: the GTRS checkpoints carry the whole backbone.
 """
 

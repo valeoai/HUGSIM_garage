@@ -1,7 +1,7 @@
 """ZTRS agent: checkpoint loading and inference.
 
 From woxihuanjiangguo/ZTRS (Apache-2.0) ``navsim/agents/ztrs/ztrs_agent.py`` (``initialize`` and
-``get_trajectory_from_agent_input``), as in hyzhou404/NAVSIM. The losses, optimisers and callbacks
+``get_trajectory_from_agent_input``), as in our NAVSIM checkout. The losses, optimisers and callbacks
 are dropped. The features are GTRS's.
 """
 

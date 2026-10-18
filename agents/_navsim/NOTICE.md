@@ -11,9 +11,10 @@ and where they come from, are in its folder's `NOTICE.md`.
 |---|---|---|
 | [NAVSIM](https://github.com/autonomousvision/navsim) (autonomousvision) | Apache-2.0 | `common.py` (data classes; with nuplan-devkit's `TrajectorySampling`), `agent_head.py` (`AgentHead` of TransFuser), `vov.py` (VoVNet, via NVlabs/GTRS), `attn.py` (via NVlabs/GTRS) |
 | [GTRS](https://github.com/NVlabs/GTRS) (NVlabs) | Apache-2.0 | `hydra.py` (`HydraBackbone`, `HydraFeatureBuilder`), `vov.py`, `attn.py` |
-| [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM) | Apache-2.0 | `parse.py` (the `parse_raw` pieces the agents share), `viz.py`, and the client scripts that `policy.py` folds in |
+| [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM) | Apache-2.0 | `viz.py`, the LTF pieces of `parse.py`, and the LTF client (`ltf_e2e.py`, `hugsim/dataparser.py`) that `policy.py` folds in |
+| our NAVSIM checkout (unpublished) | ours | the GTRS-family pieces of `parse.py`, and the DrivoR/TOAD and GTRS-family clients (`dynamo_e2e.py`, `gtrs_e2e.py`, `ztrs_e2e.py`, `gtrs_aug_e2e.py`) that `policy.py` folds in |
 
-All five agents reach this repository through the HUGSIM clients of hyzhou404/NAVSIM (a fork of NAVSIM).
+LTF reaches this repository through hyzhou404/NAVSIM's HUGSIM client (`ltf_e2e.py`). The other agents reach it through the HUGSIM clients we added in our NAVSIM checkout, a working copy of hyzhou404/NAVSIM; none of those clients, nor the DrivoR, TOAD and GTRS-family agent code they run, is in hyzhou404/NAVSIM.
 
 Written for this port: `base.py`, `policy.py` (the spec loading, the device and checkpoint handling),
 `run.py`, `__init__.py`, and `../tools/plans.py`.

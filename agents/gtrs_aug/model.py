@@ -1,7 +1,7 @@
 """GTRS-Aug model: GTRS's vocabulary scorer plus one offset-decoder refinement stage.
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_aug/hydra_model.py``, ``hydra_backbone.py`` and
-``aug_meta_arch.py``, as in hyzhou404/NAVSIM. Dropped (all off, or training only, in the shipped
+``aug_meta_arch.py``, as in our NAVSIM checkout. Dropped (all off, or training only, in the shipped
 config): the student-side forward and its augmentations, the mask-loss path, the EMA update, the
 vocabulary expansion by k-means interpolation (``traj_expansion_in_infer``), the diffusion
 proposals read from the ``DP_PREDS`` environment variable, and the NeRF/back-view options.

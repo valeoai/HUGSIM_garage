@@ -1,7 +1,8 @@
-"""The five NAVSIM-family agents behind one ``step(obs, info) -> plan`` function.
+"""The NAVSIM-family agents behind one ``step(obs, info) -> plan`` function.
 
-Each agent reproduces, step for step, what its HUGSIM client script in hyzhou404/NAVSIM did:
-``hugsim/dataparser.py`` + ``ltf_e2e.py`` (LTF), ``dynamo_e2e.py`` (TOAD, and DrivoR with its paper's settings) and
+Each agent reproduces, step for step, what its HUGSIM client script did: hyzhou404/NAVSIM's
+``hugsim/dataparser.py`` + ``ltf_e2e.py`` (LTF), and the clients we added in our NAVSIM checkout,
+``dynamo_e2e.py`` (TOAD, and DrivoR with its paper's settings) and
 ``gtrs_e2e.py``/``ztrs_e2e.py``/``gtrs_aug_e2e.py``, each with its own ``parse_raw``. The three
 GTRS-family clients and LTF share the ego-status quirk (velocity and acceleration rotated by the
 steering angle, the driving command fixed to "straight"); DrivoR and TOAD pass the longitudinal speed and
