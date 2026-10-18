@@ -1,6 +1,9 @@
-"""The :class:`AgentSpec` of TOAD: DrivoR with CEM refinement of the scorer's best proposal, as
-hyzhou404/NAVSIM's ``dynamo_e2e.py`` client runs it (``CONFIG_NAME = "drivor"``): the checkpoint
-``nav3.ckpt``, the PDMS scorer weights and CEM on, all the defaults of ``.._drivor.config``.
+"""The :class:`AgentSpec` of TOAD (valeoai/TOAD, arXiv 2606.07170): DrivoR with CEM refinement of the
+scorer's best proposal, as hyzhou404/NAVSIM's ``dynamo_e2e.py`` client runs it (``CONFIG_NAME =
+"drivor"``): DrivoR's released NAVSIM-v1 checkpoint ``drivor_Nav1_25epochs.pth``, the PDMS scorer
+weights and CEM on, all the defaults of ``.._drivor.config``. Two CEM settings of that client differ
+from TOAD's released code: the update smoothing ``cem_alpha`` is 0.7 (1.0 there) and sampled controls
+are clamped at 5.0 times the kinematic limits (1.5 there).
 """
 
 from .._drivor.client import drivor_choice, parse_drivor
@@ -18,7 +21,7 @@ def _build_toad(paths):
 
 SPEC = AgentSpec(
     'toad',
-    {'ckpt': 'toad/nav3.ckpt'},
+    {'ckpt': 'toad/drivor_Nav1_25epochs.pth'},
     _build_toad,
     parse_drivor,
     'compute_trajectory',
