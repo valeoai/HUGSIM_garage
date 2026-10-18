@@ -153,17 +153,21 @@ class HUGSimEnv(gymnasium.Env):
         semantic_idx = torch.argmax(self.gaussians.get_full_3D_features, dim=-1, keepdim=True)
         ground_xyz = self.gaussians.get_full_xyz[(semantic_idx == 0)[:, 0]].detach().cpu().numpy()
         scene_xyz = self.gaussians.get_full_xyz[((semantic_idx > 1) & (semantic_idx != 10))[:, 0]].detach().cpu().numpy()
-        # The scene's ground and scene clouds (world frame), kept for the scorers. They are written
-        # into the episode folder unless base.write_point_clouds is false: closed_loop.py's
-        # --outputs scoring writes only the part of them an episode's scorers can reach.
-        self.ground_xyz, self.scene_xyz = ground_xyz.astype(float), scene_xyz.astype(float)
-        if cfg.base.get('write_point_clouds', True):
+        # The scene's ground and scene clouds (world frame). They are written into the episode folder
+        # when base.write_point_clouds is true (closed_loop.py always sets it: --outputs full). With
+        # it false (--outputs scoring) nothing is written here and the float64 arrays stay on the
+        # env, for closed_loop.py to crop to the part of them an episode's scorers can reach.
+        ground_pts, scene_pts = ground_xyz.astype(float), scene_xyz.astype(float)
+        if cfg.base['write_point_clouds']:
+            self.ground_xyz = self.scene_xyz = None
             ground_pcd = o3d.geometry.PointCloud()
-            ground_pcd.points = o3d.utility.Vector3dVector(self.ground_xyz)
+            ground_pcd.points = o3d.utility.Vector3dVector(ground_pts)
             o3d.io.write_point_cloud(os.path.join(output, 'ground.ply'), ground_pcd)
             scene_pcd = o3d.geometry.PointCloud()
-            scene_pcd.points = o3d.utility.Vector3dVector(self.scene_xyz)
+            scene_pcd.points = o3d.utility.Vector3dVector(scene_pts)
             o3d.io.write_point_cloud(os.path.join(output, 'scene.ply'), scene_pcd)
+        else:
+            self.ground_xyz, self.scene_xyz = ground_pts, scene_pts
 
         if cfg.scenario.load_HD_map:
             self.planner.update_agent_route()

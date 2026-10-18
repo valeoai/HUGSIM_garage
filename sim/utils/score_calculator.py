@@ -17,8 +17,10 @@ from scipy.spatial import cKDTree
 
 # _calculate_drivable_area_compliance masks only the ground points that can lie in a waypoint's
 # footprint (within half its diagonal) instead of rotating the whole cloud for each waypoint: the
-# counts, so the score, are identical, ~20x faster. _calculate_no_collision likewise skips the
-# polygon test of an obstacle too far to touch the ego. False runs the original code for both.
+# counts, so the score, are bitwise identical on this CPU path (with the cropped clouds of
+# closed_loop.py --outputs scoring, the whole scorer went from 53.2 s to 3.2 s an episode on average
+# over 40 past episodes). _calculate_no_collision likewise skips the polygon test of an obstacle too far
+# to touch the ego. False runs the original code for both.
 FAST_SCORING = True
 
 # ego_box's z is the camera plane (HUGSimEnv.vt[1], one camera height above the road), so the

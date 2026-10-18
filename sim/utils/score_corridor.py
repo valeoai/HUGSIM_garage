@@ -17,6 +17,12 @@ The poses asked about (all in the sim frame, x = world z, y = -world x):
 A frame whose plan has fewer than two waypoints is skipped by the native scorer, and the realized
 terminal collision keyframe asks no new question, so neither adds a pose. Every frame is used
 here, not only the key frames the scorers visit: a superset can only keep more.
+
+Precision: the scores are identical in practice. The CPU drivable-area path is bitwise identical
+(it keeps whole points, in order). The GPU background check is identical up to float32 rounding of a
+point on a box face: a cuBLAS matmul over the subset can round 1 ulp differently from one over the
+full cloud, so such a point could in principle flip. None did over 20,736 box queries.
+Non-finite poses are dropped from the centres (their boxes contain no point in either scorer).
 """
 
 import numpy as np
@@ -51,7 +57,10 @@ def scoring_centers(frames):
         ego_v[-1] = ego_v[-2]
         for tau in REALIZED_TAU_S:
             centers.append(ego[:, :2] + ego_v * tau)
-    return np.concatenate(centers) if centers else np.zeros((0, 2))
+    out = np.concatenate(centers) if centers else np.zeros((0, 2))
+    # A NaN or inf pose (a diverged plan) has a box that contains no point in either scorer, and
+    # cKDTree refuses it: keep the finite centres only.
+    return out[np.isfinite(out).all(axis=1)]
 
 
 def corridor_radius(frames):

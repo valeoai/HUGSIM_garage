@@ -7,7 +7,9 @@ run with --outputs scoring --realized_score, so its folder holds data.pkl, eval.
 realized_score.json and the cropped clouds. A job whose folder already holds realized_score.json
 is skipped, so a run can be stopped and restarted. Agents listed in agents/registry.py run
 --in_process; the others over the pipes, on the same GPU. A job past --timeout is killed with its
-whole process group and retried once. Episodes land in $HUGSIM_OUT/<set>/<dataset>_<agent>/, and
+whole process group and retried once. An episode folder that is a symlink (reused from another set)
+is done if its target holds a realized_score.json, and is otherwise skipped, never run into.
+Episodes land in $HUGSIM_OUT/<set>/<dataset>_<agent>/, and
 aggregate_benchmark.py turns them into a table of the three HD-Score variants.
 
 Measured on toro (two H200s shared with other jobs): a NAVSIM-family episode takes 1 to 4 minutes,
@@ -16,6 +18,7 @@ a UniAD or VAD one 7 to 9, with about 3.5 GB and 6 GB of GPU memory each.
 
 import argparse
 import glob
+import json
 import os
 import random
 import re
@@ -24,6 +27,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from collections import Counter
 
 REPO = os.path.dirname(os.path.abspath(__file__))
@@ -51,7 +55,28 @@ def jobs(args):
 
 
 def done(job):
+    """A realized_score.json is there (through a symlinked folder too): scored, crashed or too short."""
     return os.path.isfile(os.path.join(job["episode"], "realized_score.json"))
+
+
+def linked(job, args):
+    """The episode folder, or a folder above it under <out>/<set>, is a symlink (reused from another set)."""
+    path = os.path.join(args.out, args.set)
+    for part in os.path.relpath(job["episode"], path).split(os.sep):
+        path = os.path.join(path, part)
+        if os.path.islink(path):
+            return True
+    return False
+
+
+def read_record(job):
+    """The episode's realized_score.json as a dict, or None (absent, unreadable, or `null`)."""
+    try:
+        with open(os.path.join(job["episode"], "realized_score.json")) as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
 
 
 def command(job, args):
@@ -75,13 +100,21 @@ LOAD_HOLD_S = 45
 GPU_LOCKS, GPU_LAST_START = {}, {}
 
 
-def free_mb(gpu):
+#: Longest an episode waits for room on its GPU, in seconds, before it gives the GPU back and is requeued.
+MEMORY_WAIT_MAX_S = 1800.0
+
+
+def free_mb(gpu, log=None):
+    """Free MiB on the GPU, or None when nvidia-smi cannot say (logged as an error, not as 0 MiB free)."""
     try:
-        out = subprocess.run(["nvidia-smi", "-i", str(gpu), "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=30).stdout
-        return int(out.strip().splitlines()[0])
-    except Exception:
-        return 0
+        res = subprocess.run(["nvidia-smi", "-i", str(gpu), "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=30)
+        if res.returncode != 0:
+            raise RuntimeError(f"nvidia-smi exit {res.returncode}: {res.stderr.strip() or res.stdout.strip()}")
+        return int(res.stdout.strip().splitlines()[0])
+    except Exception as e:
+        (log or print)(f"ERROR      nvidia-smi on gpu{gpu} failed: {type(e).__name__}: {e}")
+        return None
 
 
 def wait_for_memory(job, gpu, log):
@@ -89,24 +122,39 @@ def wait_for_memory(job, gpu, log):
 
     One thread checks a GPU at a time (its lock is held only while checking); the start time it
     records makes the next one wait for the new episode to allocate before reading free memory.
+    Gives up after MEMORY_WAIT_MAX_S, lock wait included: it releases the lock and returns False,
+    and the caller requeues the job.
     """
     need = NEED_MB.get(job["agent"], DEFAULT_NEED_MB)
     lock = GPU_LOCKS.setdefault(str(gpu), threading.Lock())
-    t0, warned = time.time(), False
-    with lock:
+    t0 = time.time()
+    deadline = t0 + MEMORY_WAIT_MAX_S
+    warned, last_err = False, 0.0
+    if not lock.acquire(timeout=max(0.0, MEMORY_WAIT_MAX_S)):
+        log(f"memory-wait timeout gpu{gpu} for {job['agent']}: could not get the GPU check lock in {int(MEMORY_WAIT_MAX_S)}s")
+        return False
+    try:
         while True:
+            if time.time() >= deadline:
+                log(f"memory-wait timeout gpu{gpu} for {job['agent']}: no {need} MiB free after {int(time.time() - t0)}s; requeued")
+                return False
             hold = GPU_LAST_START.get(str(gpu), 0.0) + LOAD_HOLD_S - time.time()
             if hold > 0:
-                time.sleep(hold)
+                time.sleep(min(hold, max(0.0, deadline - time.time())))
                 continue
-            free = free_mb(gpu)
-            if free >= need:
+            # nvidia-smi errors are logged at most every 5 minutes, as errors
+            free = free_mb(gpu, log if time.time() - last_err > 300 else (lambda _m: None))
+            if free is None:
+                last_err = time.time()
+            elif free >= need:
                 GPU_LAST_START[str(gpu)] = time.time()
-                return
-            if not warned and time.time() - t0 > 300:
+                return True
+            elif not warned and time.time() - t0 > 300:
                 log(f"waiting    gpu{gpu} {free} MiB free, {need} needed, for {job['agent']} ({int(time.time() - t0)}s)")
                 warned = True
-            time.sleep(15)
+            time.sleep(min(15, max(0.0, deadline - time.time())))
+    finally:
+        lock.release()
 
 
 #: An agent or a simulator that dies of these did not fail the episode: the GPU had no room for it.
@@ -126,28 +174,45 @@ def out_of_memory(job):
     return False
 
 
-def gpu_crash(job):
-    """A crash record whose cause was the GPU's memory, not the agent: it is dropped and re-run.
+def gpu_crash(job, can_retry):
+    """A crash record whose cause was the GPU's memory, not the agent: dropped, to be re-run.
 
     On a GPU shared with other jobs an agent can fail to allocate at start-up or mid-episode; the
     episode then ends as an agent crash and would be scored 0, which says nothing about the agent.
+    The record is dropped only while a retry remains (`can_retry`); on the last attempt it is kept,
+    marked "gpu_crash": true, so aggregate_benchmark.py reports it apart. Returns True if dropped.
     """
-    path = os.path.join(job["episode"], "realized_score.json")
-    try:
-        with open(path) as f:
-            rec = __import__("json").load(f)
-    except (OSError, ValueError):
+    rec = read_record(job)
+    if rec is None or not rec.get("crashed") or rec.get("gpu_crash"):
         return False
-    if rec.get("crashed") and any(e in (rec.get("error") or "").lower() for e in GPU_RESOURCE_ERRORS):
+    if not any(e in (rec.get("error") or "").lower() for e in GPU_RESOURCE_ERRORS):
+        return False
+    path = os.path.join(job["episode"], "realized_score.json")
+    if can_retry:
         os.remove(path)
         return True
+    rec["gpu_crash"] = True
+    with open(path, "w") as f:
+        json.dump(rec, f)
     return False
 
 
-def run(job, gpu, args, log):
+def child_env(gpu, args):
+    """closed_loop.py reads its output and data trees from the environment, not from --out / --data."""
+    return dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), CUDA_DEVICE_ORDER="PCI_BUS_ID",
+                PYTHONPATH=f"{REPO}/sim:{REPO}", HUGSIM_OUT=os.path.abspath(args.out),
+                HUGSIM_DATA=os.path.abspath(args.data))
+
+
+def run(job, gpu, args, log, can_retry=lambda: True):
+    """Run one episode. Returns (done, gpu_trouble, started): gpu_trouble when the GPU, not the agent, ended it."""
+    if linked(job, args):  # reused from another set: never launch into it
+        log(f"{'symlinked':12s} {'':8s}gpu{gpu} {job['agent']:8s} {os.path.relpath(job['episode'], args.out)} -> skipped")
+        return done(job), False, False
     os.makedirs(job["episode"], exist_ok=True)
-    env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONPATH=f"{REPO}/sim:{REPO}")
-    wait_for_memory(job, gpu, log)
+    env = child_env(gpu, args)
+    if not wait_for_memory(job, gpu, log):
+        return False, False, False
     t0 = time.time()
     with open(os.path.join(job["episode"], "run.log"), "w") as f:
         p = subprocess.Popen(command(job, args), cwd=REPO, env=env, stdout=f, stderr=subprocess.STDOUT,
@@ -166,13 +231,17 @@ def run(job, gpu, args, log):
     # episode kills when it ends normally; one killed from outside (--timeout) leaves it blocked on
     # a pipe, holding its GPU memory, and attached to the folder a retry would reuse. Its command
     # line names the episode folder.
-    subprocess.run(["pkill", "-9", "-f", f"{job['episode']}( |$)"], check=False)
-    if gpu_crash(job):
+    subprocess.run(["pkill", "-9", "-f", f"{re.escape(job['episode'])}( |$)"], check=False)
+    trouble = gpu_crash(job, can_retry())
+    if trouble:
         status = "oom"
     else:
         status = "ok" if done(job) else ("oom" if out_of_memory(job) else f"fail({rc})")
+        trouble = status == "oom"
+        if done(job) and (read_record(job) or {}).get("gpu_crash"):
+            status = "gpu_crash"  # the last attempt: kept, scored 0, reported apart
     log(f"{status:12s} {time.time() - t0:7.0f}s gpu{gpu} {job['agent']:8s} {os.path.relpath(job['episode'], args.out)}")
-    return done(job)
+    return done(job), trouble, True
 
 
 def main():
@@ -193,12 +262,23 @@ def main():
     if not args.data or not args.out:
         raise SystemExit("set HUGSIM_DATA and HUGSIM_OUT (or pass --data / --out)")
 
-    todo = [j for j in jobs(args) if not done(j)]
+    all_jobs = jobs(args)
+    # A crash record of the GPU's memory written before gpu_crash() existed (no "gpu_crash" mark) is
+    # a failed attempt, not a score: drop it so the job is re-run. A symlinked folder is not ours to touch.
+    swept = [] if args.dry_run else [j for j in all_jobs if not linked(j, args) and gpu_crash(j, True)]  # a dry run deletes nothing
+    if swept:
+        print(f"dropped {len(swept)} stale GPU-memory crash records: {dict(Counter(j['agent'] for j in swept))}", flush=True)
+    skipped = [j for j in all_jobs if linked(j, args) and not done(j)]
+    for j in skipped:
+        print(f"symlinked, no realized_score.json at its target: skipped {os.path.relpath(j['episode'], args.out)}", flush=True)
+    todo = [j for j in all_jobs if not done(j) and not linked(j, args)]
     random.Random(0).shuffle(todo)  # mix agents and scenes, so the GPUs see a steady load
     print(f"{len(todo)} episodes to run: {dict(Counter(j['agent'] for j in todo))}", flush=True)
     if args.dry_run:
         for j in todo[:5]:
             print(" ".join(command(j, args)))
+        env = child_env("0", args)
+        print({k: env[k] for k in ("HUGSIM_OUT", "HUGSIM_DATA", "CUDA_DEVICE_ORDER")})
         return
 
     lock, queue, retried, ooms = threading.Lock(), list(todo), set(), Counter()
@@ -212,22 +292,35 @@ def main():
             with open(log_path, "a") as f:
                 f.write(f"{stamp} {line}\n")
 
+    def can_retry(job):
+        with lock:
+            return ooms[job["episode"]] < 5 or job["episode"] not in retried
+
     def worker(gpu):
         while True:
             with lock:
                 if not queue:
                     return
                 job = queue.pop()
-            if not run(job, gpu, args, log):
-                with lock:
-                    # An out-of-memory start says nothing about the agent: it goes back in the queue
-                    # without spending the one retry (up to 5 times).
-                    if out_of_memory(job) and ooms[job["episode"]] < 5:
-                        ooms[job["episode"]] += 1
+            try:
+                ok, trouble, started = run(job, gpu, args, log, lambda: can_retry(job))
+            except Exception:
+                log(f"EXCEPTION  gpu{gpu} {job['agent']} {os.path.relpath(job['episode'], args.out)}:\n{traceback.format_exc()}")
+                ok, trouble, started = False, False, True  # a failed attempt
+            if ok:
+                continue
+            with lock:
+                if not started:
+                    if not linked(job, args):  # no room on the GPU in time: the back of the queue, no attempt spent
                         queue.insert(0, job)
-                    elif job["episode"] not in retried:
-                        retried.add(job["episode"])
-                        queue.insert(0, job)
+                # An out-of-memory start says nothing about the agent: it goes back in the queue
+                # without spending the one retry (up to 5 times).
+                elif trouble and ooms[job["episode"]] < 5:
+                    ooms[job["episode"]] += 1
+                    queue.insert(0, job)
+                elif job["episode"] not in retried:
+                    retried.add(job["episode"])
+                    queue.insert(0, job)
 
     threads = []
     for spec in args.slots:

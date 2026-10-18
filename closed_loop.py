@@ -262,10 +262,18 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
 
     # --outputs scoring: the env wrote no clouds (base.write_point_clouds). Keep the corridor of
     # this episode's data in ground.ply / scene.ply, which is all the scorers (and score_realized.py,
-    # offline) can look at, and score on those same arrays rather than reading them back.
+    # offline) can look at, and score on those same arrays rather than reading them back. The scores
+    # are identical in practice to full clouds (CPU drivable area: bitwise; GPU background check:
+    # up to float32 rounding of a point on a box face).
     clouds = None
     if outputs == 'scoring' and save_data['frames']:
-        clouds = crop_episode(save_data['frames'], env.unwrapped.ground_xyz, env.unwrapped.scene_xyz)
+        try:
+            clouds = crop_episode(save_data['frames'], env.unwrapped.ground_xyz, env.unwrapped.scene_xyz)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            print('corridor crop failed; scoring and writing the uncropped clouds', flush=True)
+            clouds = (env.unwrapped.ground_xyz, env.unwrapped.scene_xyz)
         write_cloud(os.path.join(output, 'ground.ply'), clouds[0])
         write_cloud(os.path.join(output, 'scene.ply'), clouds[1])
     
@@ -302,6 +310,8 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                       "marker": marker["marker"] if marker else None}
         else:
             result = score_episode(output, cfg.model_path, clouds=clouds)
+            if result is None:  # fewer than two frames, no crash: a file of `null` would read as a crash-free score
+                result = {"too_short": True}
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
