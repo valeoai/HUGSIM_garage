@@ -10,10 +10,11 @@ agents that drive in it. The simulator and the data are Zhou et al.'s work ([pap
 we opened four days later is still open. Rather than carry fixes as patches in every project
 that uses the simulator, they live here on `main`, with their upstream status recorded below.
 
-**A place to gather the baseline agents.** Running a closed loop needs an AD side, and those sit
-in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM, and whatever you are building). The
-interface for plugging one in is described under [Agents](#agents) and needs no fork, no config
-file and no edit to `closed_loop.py`.
+**A place to gather the baseline agents.** Running a closed loop needs an AD side. Upstream's
+sat in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM), each with its own environment; here
+they are in [`agents/`](agents/README.md): UniAD and VAD with the mmcv environment they need,
+LTF, DrivoR, GTRS, ZTRS and GTRS-Aug in the simulator's own. Plugging in one of your own needs no
+fork, no config file and no edit to `closed_loop.py`, see [Agents](#agents).
 
 ## What this fork changes
 
@@ -58,6 +59,17 @@ height; reactive agents gain, because it was also inventing collisions overhead.
   `HUGSIM_ARGS`, split on whitespace, to every `closed_loop.py` call. `run_dataset.sh` refuses
   `--output_dir`, `--ad`, `--base_path` and `--scenario_path` there, since they pick the episode
   folder its `eval.json` skip reads. See [Running a variant](#running-a-variant).
+* **The baseline agents ship in [`agents/`](agents/README.md).** The configs' `base.<ad>_path` is
+  `${oc.env:HUGSIM_AD_<NAME>,agents/...}`: the in-repo launcher unless the variable is exported.
+  A relative launcher path is taken against this checkout before the cwd. Their weights come from
+  `HUGSIM_AGENT_CKPTS`, which `closed_loop.py` checks before launching one of them.
+* **`--in_process`** calls an agent's step function in the simulator's process instead of over
+  the pipes, for the agents in `agents/registry.py`. The default stays the FIFO.
+* **An agent that exits early no longer hangs the episode.** `closed_loop.py` watches the
+  launcher's process and, once it is gone, releases whichever pipe the simulator waits on; the
+  episode then ends with an error naming the agent's exit code and log. The launcher runs in a
+  session of its own and its whole process group is killed at the end, so an agent behind
+  `pixi run` or `conda run` (which fork rather than exec) is not left holding its GPU.
 
 # Agents
 
@@ -78,9 +90,15 @@ launching removes an earlier run's `eval.json` and `video.mp4` from the episode 
 neither outlives a run that does not write it (an agent's refusal or `--skip-native-eval` writes
 no `eval.json`, `--video off` no `video.mp4`).
 
-The shipped configs name `uniad`, `vad`, `ltf`, `dynamo`, `gtrs`, `ztrs`, `gtrs_aug` and
-`pictura`, each reading its own variable, because these live in unrelated checkouts and share no
-root.
+The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `gtrs`, `ztrs` and `gtrs_aug`, whose
+launchers are in [`agents/`](agents/README.md) (`base.<ad>_path` is
+`${oc.env:HUGSIM_AD_<NAME>,agents/...}`, so an exported variable still replaces one), and
+`dynamo` and `pictura`, which live in unrelated checkouts and read their variable alone.
+
+The agents that run in this environment (`ltf`, `drivor`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
+`agents/registry.py`) can be called in the simulator's process instead, with `--in_process`: no
+launcher, no pipes, and a step of LTF about 1.5 times faster. See
+[agents/README.md](agents/README.md#in-process).
 
 ## Observation modes
 
@@ -124,9 +142,10 @@ at its first step: it says why in its log (its stdout and stderr go to the episo
 `output.txt`) and answers `None` on `plan_pipe`. `closed_loop.py` then ends the episode and
 sends `'Done'`. The episode folder has no `eval.json` and its `data.pkl` holds no frames, so
 `get_score.py` lists the scenario as missing; `closed_loop.py` still exits 0. An agent must
-answer, and then read that `'Done'`: one that raises or exits instead leaves `closed_loop.py`
-blocked on a pipe until something kills it, since nothing watches the agent's process during
-the episode.
+answer, and then read that `'Done'`. One that exits instead is caught: `closed_loop.py` watches
+the launcher's process, releases the pipe it waits on, and ends the episode with an error naming
+the agent's exit code and `output.txt` (agents/client.py's `serve` keeps both promises for the
+agents in `agents/`).
 
 Neither abstract mode renders the cameras each step. Before the modes, an agent on the export
 still had all six cameras rendered and piped to it every step, and it never read them. The
@@ -177,14 +196,15 @@ that check never sees a finished scene: run one worker then, not a forward and r
 
 ## Environment
 
-The configs interpolate these; `closed_loop.py` checks only the ones a given run reads and
-reports them all at once:
+The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read
+themselves); `closed_loop.py` checks only the ones a given run reads and reports them all at once:
 
 | variable | what it is |
 |---|---|
 | `HUGSIM_DATA` | the data tree (`HUGSIM-public` / `HUGSIM-private`) |
 | `HUGSIM_OUT` | where episode folders are written, or pass `--output_dir` |
-| `HUGSIM_AD_<NAME>` | one per agent, or pass `--ad_path` |
+| `HUGSIM_AD_<NAME>` | an agent's launcher, or pass `--ad_path`; needed only for agents not in `agents/` |
+| `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)) |
 | `NUSCENES_RAW` | raw nuScenes, read only by scenarios with `load_HD_map: true` |
 
 ---
@@ -267,9 +287,12 @@ Here is a video for the GUI usage demonstration: [GUI Video](https://github.com/
 
 # Simulation
 
-**Before simulation, [UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM) and [NAVSIM](https://github.com/hyzhou404/NAVSIM) client should be installed. The client environments are allowed to be separated from the HUGSIM environment.**
-
-The dependencies for NAVSIM are already specified as the pixi environment file, so you don't need to manually install the dependencies.
+**The AD clients are in [`agents/`](agents/README.md)**, vendored from upstream's
+[UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM)
+and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, GTRS, ZTRS and GTRS-Aug run in
+the pixi environment above; UniAD and VAD need the environment in `agents/_mmdet3d/` (one
+`pixi install` and two build tasks, [agents/_mmdet3d/README.md](agents/_mmdet3d/README.md)). All of
+them read their weights from `HUGSIM_AGENT_CKPTS`.
 
 In **closed_loop.py**, we automatically launch autonomous driving algorithms.
 
@@ -282,7 +305,7 @@ python closed_loop.py --scenario_path ./configs/benchmark/${dataset_name}/${scen
             --base_path ./configs/sim/${dataset_name}_base.yaml \
             --camera_path ./configs/sim/${dataset_name}_camera.yaml \
             --kinematic_path ./configs/sim/kinematic.yaml \
-            --ad ${method_name: [uniad, vad, ltf]} \
+            --ad ${method_name: [uniad, vad, ltf, drivor, gtrs, ztrs, gtrs_aug]} \
             --ad_cuda ${ad_cuda}
 ```
 
@@ -307,19 +330,12 @@ for cfg in ${scenario_dir}/*.yaml; do
 done
 ```
 
-In practice, you may encounter errors due to an incorrect environment, path, and etc. For debugging purposes, you can modify the last part of code as:
-```python
-# process = launch(ad_path, args.ad_cuda, output)
-# try:
-#     create_gym_env(cfg, output)
-#     check_alive(process)
-# except Exception as e:
-#     print(e)
-#     process.kill()
-
-# For debug
-create_gym_env(cfg, output)
-```
+In practice, you may encounter errors due to an incorrect environment, path, and etc. The agent's
+own output is in `<episode>/output.txt`, and a step that raised leaves its traceback in
+`<episode>/agent_crash.txt`. To debug the agent by hand, replace the launch at the end of
+`closed_loop.py` with `create_gym_env(cfg, output, FifoAgent(output, process=None))` and start the
+agent yourself on the episode folder; an agent in `agents/registry.py` can instead run with
+`--in_process`, where a breakpoint in its step stops the simulator too.
 
 # TODO list
 - [x] Release sample data and results

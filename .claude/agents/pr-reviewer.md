@@ -44,8 +44,9 @@ status), an interface for plugging in agents, and `sim/scene_export/`. `git -C <
   (`sim/utils/score_calculator.py` `hugsim_evaluate`) into `eval.json`.
 - The AD side talks over two FIFOs in the episode folder: the sim writes a pickled `(obs, info)` to
   `obs_pipe`, the AD answers on `plan_pipe` with a plan (or a dict carrying `plan` plus its own
-  `pose_delta`/`acc`/`velo`/`steer`), and the sim sends `'Done'` at the end. The AD sides live in other
-  repos (UniAD_SIM, VAD_SIM, NAVSIM, Pictura-dev): `info`'s keys and the plan format are their API.
+  `pose_delta`/`acc`/`velo`/`steer`), and the sim sends `'Done'` at the end. The baseline AD sides live in
+  `agents/` (one folder per agent; `_navsim/` and `_mmdet3d/` hold what they share), others in other
+  repos (Pictura-dev): `info`'s keys and the plan format are their API.
   Every step's `info['obs_mode']` names the observation mode (`rgb`, `vector` or `raster`); in `vector`
   and `raster`, `obs` is `{}` and `info['scene_export']` holds `roads`, `cuboids`, `cuboid_speed` and
   `route` in the ego frame of `ego_box` (x forward, y left, z up, z = 0 on the road), and in `raster`
