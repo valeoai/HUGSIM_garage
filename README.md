@@ -46,6 +46,18 @@ height; reactive agents gain, because it was also inventing collisions overhead.
 * **The tracker optimises for the step it executes.** `traj2control` now resamples the reference
   onto the simulator's timeline when `plan_dt != sim_dt` and passes `discretization_time`, instead
   of assuming the two agree.
+* **The tracker can be made a function of its inputs (opt-in, `--deterministic_tracker`).** The
+  iLQR tracker stops a solve after 0.05 s of wall-clock time (`max_solve_time`, from nuPlan), so the
+  command it returns depends on how busy the machine is, and two runs of one agent on one scenario
+  drift apart from the first step. With four LTF episodes sharing a node, the budget cut 91 % of
+  solves short, after a median 14 to 18 of the about 33 iterations that convergence takes; two
+  default runs ended 69 and 67 frames long, two runs with the flag were identical frame for frame.
+  The flag stops the solver on convergence and its 100-iteration cap only (every solve converged
+  by iteration 37): about 45 ms more per step there (median 54 to 98 ms), 3 s over a 68-step
+  episode at dt 0.25 s; the cost at dt 0.1 s is not measured. Off by default, because it changes
+  the controls and so every score. It makes the tracking reproducible, not every episode: on a
+  scenario with `load_HD_map: true` the actors still pick their route at a fork at random
+  (`get_route`, `sim/utils/plan.py`), unseeded and from a set whose order changes per process.
 
 ### Interface, not bug fixes
 
@@ -184,8 +196,9 @@ PICTURA_CHECKPOINT=/path/to/vector.pt HUGSIM_AD_PICTURA_VECTOR=/path/to/Pictura-
 These episodes land in `$HUGSIM_OUT/official436/nuscenes_pictura_vector/`. `run_dataset.sh`'s
 skip, which lets a forward and a reverse worker split the scenes, looks for them there, under the
 same `$HUGSIM_OUT` that `closed_loop.py` writes to. `python get_score.py official436 pictura_vector`
-scores the variant. `run_all.sh` and `run_sweep.sh` take the agent name and pass it on. Any other `HUGSIM_ARGS` that changes what
-an episode is, such as another `--kinematic_path` (dt 0.1), needs an agent name of its own
+scores the variant. `run_all.sh` and `run_sweep.sh` take the agent name and pass it on. Any other
+`HUGSIM_ARGS` that changes what an episode is, such as another `--kinematic_path` (dt 0.1) or
+`--deterministic_tracker`, needs an agent name of its own
 too, and the mode again: a `pictura` variant without `--obs_mode raster` runs in `rgb`, and
 Pictura refuses every episode.
 

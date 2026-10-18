@@ -12,6 +12,7 @@ import hugsim_env
 from hugsim_env.envs.hug_sim import OBS_MODES, RASTER_RIGS, RASTER_VIEWS, resolve_raster
 from argparse import ArgumentParser
 from sim.utils.sim_utils import traj2control, traj_transform_to_global
+from sim.ilqr.lqr import set_max_solve_time
 import pickle
 import json
 import pickle
@@ -406,6 +407,14 @@ if __name__ == "__main__":
              "still written, so the episode can be scored offline",
     )
     parser.add_argument(
+        "--deterministic_tracker",
+        action="store_true",
+        help="stop the iLQR tracker on its iteration cap and convergence only, not on its 0.05 s "
+             "wall-clock budget, so the tracking no longer depends on how busy the machine is "
+             "(scenarios with load_HD_map: true still draw actor routes at random). Changes the "
+             "controls, hence the episode: run it under an agent name of its own",
+    )
+    parser.add_argument(
         "--realized_score",
         action="store_true",
         help="also write realized_score.json: TerraTransfer's closed-loop HD-Score, of the realized "
@@ -419,6 +428,8 @@ if __name__ == "__main__":
              "The agent uses this process's GPU; --ad_cuda and --ad_path do not apply",
     )
     args = parser.parse_args()
+    if args.deterministic_tracker:
+        set_max_solve_time(None)
     if args.in_process and args.ad_path is not None:
         raise SystemExit("--in_process calls the agent from agents/registry.py; it takes no --ad_path")
 
