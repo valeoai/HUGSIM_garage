@@ -6,12 +6,12 @@ code path are removed, hydra configs become explicit dataclasses, pretrained bac
 fetched at construction (the checkpoints carry them), and the HUGSIM client scripts are folded into
 `../_navsim/policy.py` and this folder's `spec.py`.
 
-The agent reaches this repository through the HUGSIM client of [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM) (`gtrs_e2e.py` and its `parse_raw`), a fork of NAVSIM.
+The agent reaches this repository through our own HUGSIM client for it, `gtrs_e2e.py` and its `parse_raw`, kept in our NAVSIM checkout: a working copy of [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM) to which we added the GTRS-family agents, their configs and their clients. None of these is in hyzhou404/NAVSIM.
 
 | Source | Licence | Files here |
 |---|---|---|
 | [GTRS](https://github.com/NVlabs/GTRS) (NVlabs) | Apache-2.0 | `config.py`, `model.py`, `agent.py` |
-| [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM) | Apache-2.0 | `spec.py` (the GTRS-family `parse_raw` is in `../_navsim/parse.py`) |
+| our NAVSIM checkout (unpublished), derived from [hyzhou404/NAVSIM](https://github.com/hyzhou404/NAVSIM)'s `ltf_e2e.py` and `hugsim/dataparser.py` | Apache-2.0 | `spec.py` (the GTRS-family `parse_raw` is in `../_navsim/parse.py`) |
 
 Written for this port: `spec.py` (the checkpoint, build function and output rule), `launch.sh`. The shared files it imports from `../_navsim/` are listed in `../_navsim/NOTICE.md`. `HydraBackbone` and `HydraFeatureBuilder` (`../_navsim/hydra.py`) and `AgentHead` (`../_navsim/agent_head.py`) were moved out of this folder and `ltf/` so that no agent folder imports another.
 

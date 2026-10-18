@@ -1,6 +1,6 @@
 """Small layers copied from timm (Apache-2.0) for the DrivoR decoder blocks.
 
-From valeoai/DrivoR ``navsim/agents/drivoR/timm_layers.py`` (the copy in hyzhou404/NAVSIM's working
+From valeoai/DrivoR ``navsim/agents/drivoR/timm_layers.py`` (the copy in our NAVSIM
 tree); unchanged.
 """
 

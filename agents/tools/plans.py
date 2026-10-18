@@ -7,7 +7,7 @@ stepped in that order (an agent sees the frames as the simulator would send them
 are saved as ``plan_0000`` ... in ``--out``, each ``(N, 2)`` ``(right, forward)``, with
 ``choice_0000`` ... the discrete choice behind each (the scorer's proposal or vocabulary index; empty for LTF). This uses the
 same ``Policy.step`` as ``python -m agents._navsim.run``. ``--seed`` seeds torch before each frame
-(``seed + frame index``) so that DrivoR's CEM sampling is repeatable; ``--seed -1`` leaves it
+(``seed + frame index``) so that TOAD's CEM sampling is repeatable; ``--seed -1`` leaves it
 unseeded, as the simulator-facing launcher does.
 """
 

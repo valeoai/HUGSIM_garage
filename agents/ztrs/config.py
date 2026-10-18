@@ -1,6 +1,6 @@
 """ZTRS config, with the values the HUGSIM ``ztrs_e2e.py`` client ran with.
 
-The values are those hydra resolved from hyzhou404/NAVSIM's ``config/HUGSIM/ztrs.yaml`` +
+The values are those hydra resolved from our NAVSIM checkout's ``config/HUGSIM/ztrs.yaml`` +
 ``config/common/agent/ztrs_vov.yaml`` (woxihuanjiangguo/ZTRS) for ``agent.config``, over the
 defaults of ``HydraRLConfig``/``TransfuserConfig``. Only the fields inference reads are kept.
 """

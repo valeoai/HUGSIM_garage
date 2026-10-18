@@ -1,6 +1,6 @@
 """GTRS-Aug config, with the values the HUGSIM ``gtrs_aug_e2e.py`` client ran with.
 
-The values are those hydra resolved from hyzhou404/NAVSIM's ``config/HUGSIM/gtrs_aug.yaml`` +
+The values are those hydra resolved from our NAVSIM checkout's ``config/HUGSIM/gtrs_aug.yaml`` +
 ``config/common/agent/gtrs_aug_vov.yaml`` (NVlabs/GTRS) for ``agent.config``, over the defaults of
 ``HydraConfigAug``/``TransfuserConfig``: the teacher network, one refinement stage, no
 augmentation. Only the fields inference reads are kept.

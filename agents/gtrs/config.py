@@ -1,6 +1,6 @@
 """GTRS (dense, vocabulary-scoring) config, with the values the HUGSIM ``gtrs_e2e.py`` client ran with.
 
-The values are those hydra resolved from hyzhou404/NAVSIM's ``config/HUGSIM/gtrs.yaml`` +
+The values are those hydra resolved from our NAVSIM checkout's ``config/HUGSIM/gtrs.yaml`` +
 ``config/common/agent/gtrs_dense_vov.yaml`` (NVlabs/GTRS) for ``agent.config``, over the defaults
 of ``HydraConfig``/``TransfuserConfig``. Only the fields inference reads are kept.
 """

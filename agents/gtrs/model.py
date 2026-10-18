@@ -1,6 +1,6 @@
 """GTRS dense model: VoVNet image tokens, a vocabulary of 16384 trajectories scored by a transformer.
 
-From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_dense/hydra_model.py``, as in hyzhou404/NAVSIM
+From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_dense/hydra_model.py``, as in our NAVSIM checkout
 (``hydra_backbone.py`` is ``agents/_navsim/hydra.py``). Dropped: the pretrained backbone load (the checkpoint carries it), the
 training-time vocabulary dropout, the NeRF/back-view options and the diffusion-proposal evaluation
 path (all off in the shipped config).

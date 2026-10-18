@@ -1,7 +1,10 @@
 """DrivoR model: camera tokens -> trajectory proposals -> scorer -> CEM refinement.
 
-From valeoai/DrivoR ``navsim/agents/drivoR/drivor_model.py`` (the copy in hyzhou404/NAVSIM's working
-tree, where the HUGSIM ``dynamo_e2e.py`` client ran it). Changes: the LiDAR branch, the training-only
+The DrivoR model is from valeoai/DrivoR (``navsim/agents/drivoR/drivor_model.py`` at fc6e5aa); the CEM
+refinement (``cem_refine`` and its helpers) is TOAD's (valeoai/TOAD), both as the copy in
+our NAVSIM checkout ran them for HUGSIM. That copy's CEM differs from TOAD's released
+code (``drivor_cem_portable/`` at cfa88e0) in two settings: ``cem_alpha`` 0.7 (1.0 there) and a
+control clamp of 5.0 times the kinematic limits (1.5 there). Changes: the LiDAR branch, the training-only
 scorer heads and the per-forward prints are dropped, and the ``getattr(cfg, name, default)`` reads
 of the CEM settings read the config (which carries those defaults) directly.
 """
@@ -445,12 +448,11 @@ class DrivoRModel(nn.Module):
         last_omega = _wrap_angle(h_curr - h_prev) / dt
         return last_ax, last_omega
 
-    @staticmethod
-    def _clamp_controls(controls: torch.Tensor) -> torch.Tensor:
+    def _clamp_controls(self, controls: torch.Tensor) -> torch.Tensor:
         """Clamp (a, omega) to slightly-relaxed kinematic envelopes. Keeps the
         rollout in a sane regime even when the Gaussian samples extreme values.
         """
-        margin = 5.0
+        margin = self._config.cem_control_margin  # 5.0 in the HUGSIM client, 1.5 in TOAD's release
         a = controls[..., 0].clamp(_MIN_LON_ACCEL * margin, _MAX_LON_ACCEL * margin)
         omega = controls[..., 1].clamp(
             -_MAX_ABS_YAW_RATE * margin, _MAX_ABS_YAW_RATE * margin

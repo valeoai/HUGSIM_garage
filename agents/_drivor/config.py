@@ -1,6 +1,9 @@
-"""DrivoR config, with the values the HUGSIM ``dynamo_e2e.py`` client ran with.
+"""DrivoR config, with the values the HUGSIM ``dynamo_e2e.py`` client ran with: TOAD's.
 
-The values are those hydra resolved from hyzhou404/NAVSIM's ``config/common/agent/drivoR.yaml``
+``agents/toad`` uses these defaults; ``agents/drivor`` turns CEM off, as the DrivoR paper's HUGSIM
+evaluation ran it (see its ``spec.py``).
+
+The values are those hydra resolved from ``config/common/agent/drivoR.yaml`` in our NAVSIM checkout
 (valeoai/DrivoR) for ``agent.config``. Training-only keys, the LiDAR branch (``lidar_pc: []`` in the
 shipped config) and the pretrained-weight paths (the checkpoint carries the whole backbone) are
 dropped. The CEM keys the original read with ``getattr(cfg, key, default)`` are fields here, with
@@ -80,6 +83,7 @@ class DrivoRConfig:
     cem_comfort_weight: float = 0.05
     cem_anchor_weight: float = 0.5
     cem_init_std_scale: float = 0.5
+    cem_control_margin: float = 5.0  # sampled controls are clamped at this times the kinematic limits
 
     image_size: Tuple[int, int] = (1148, 672)
     image_backbone: ImageBackboneConfig = field(default_factory=ImageBackboneConfig)

@@ -79,6 +79,27 @@ def read_record(job):
     return rec if isinstance(rec, dict) else None
 
 
+def pre_toad_drivor(rec):
+    """A `drivor` record from before agents/toad existed: it carries no "agent" tag, and was TOAD's drive.
+
+    Until agents/drivor and agents/toad were separated, `--ad drivor` ran DrivoR with CEM refinement,
+    which is now `toad`; closed_loop.py tags every record it writes with its --ad since. Such a record
+    must not be taken for the new `drivor` (see README.md, *Results written before agents/toad*).
+    """
+    return isinstance(rec, dict) and "agent" not in rec
+
+
+def refuse_pre_toad_drivor(folders, out, set_name):
+    """Stop if any of the `drivor` episode folders holds an untagged record, with the rename to run."""
+    if folders:
+        dirs = sorted({os.path.dirname(f) for f in folders})
+        raise SystemExit(
+            f"{len(folders)} drivor record(s) under {', '.join(os.path.relpath(d, out) for d in dirs)} "
+            "predate agents/toad and are TOAD's drive, not DrivoR's: rename each <dataset>_drivor folder "
+            f"of {os.path.join(out, set_name)} to <dataset>_toad (and re-point any symlink to it), "
+            "as README.md, *Results written before agents/toad*, describes")
+
+
 def command(job, args):
     ds = job["dataset"]
     cmd = [args.python, "closed_loop.py", "--scenario_path", job["scenario"],
@@ -263,6 +284,8 @@ def main():
         raise SystemExit("set HUGSIM_DATA and HUGSIM_OUT (or pass --data / --out)")
 
     all_jobs = jobs(args)
+    refuse_pre_toad_drivor([j["episode"] for j in all_jobs if j["agent"] == "drivor" and pre_toad_drivor(read_record(j))],
+                           args.out, args.set)
     # A crash record of the GPU's memory written before gpu_crash() existed (no "gpu_crash" mark) is
     # a failed attempt, not a score: drop it so the job is re-run. A symlinked folder is not ours to touch.
     swept = [] if args.dry_run else [j for j in all_jobs if not linked(j, args) and gpu_crash(j, True)]  # a dry run deletes nothing

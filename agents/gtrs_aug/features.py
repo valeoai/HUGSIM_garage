@@ -2,7 +2,7 @@
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_aug/hydra_features_aug.py``
 (``HydraAugFeatureBuilder``), and the status features of ``GTRSAugAgent.get_trajectory_from_agent_input``,
-as in hyzhou404/NAVSIM. Only the teacher image is built. The original also built the student image
+as in our NAVSIM checkout. Only the teacher image is built. The original also built the student image
 with random colour jitter, blur and solarisation, which the teacher inference never reads, and the
 rotated crops, which are only built when training.
 """

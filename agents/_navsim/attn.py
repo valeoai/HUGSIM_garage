@@ -1,7 +1,7 @@
 """Memory-efficient attention and the transformer encoder layer built on it (GTRS / ZTRS / GTRS-Aug).
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/utils/attn.py`` (after lucidrains' memory-efficient
-attention), as in hyzhou404/NAVSIM; unchanged.
+attention), as in our NAVSIM checkout; unchanged.
 """
 
 from functools import partial

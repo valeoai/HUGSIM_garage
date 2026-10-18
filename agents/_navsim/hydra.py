@@ -1,7 +1,7 @@
 """Pieces of the GTRS dense model that GTRS and ZTRS share: the VoVNet backbone and the input features.
 
 From NVlabs/GTRS (Apache-2.0) ``navsim/agents/gtrs_dense/hydra_backbone.py`` (``HydraBackbone``) and
-``hydra_features.py`` (``HydraFeatureBuilder``), as in hyzhou404/NAVSIM. ZTRS reuses both
+``hydra_features.py`` (``HydraFeatureBuilder``), as in our NAVSIM checkout. ZTRS reuses both
 unchanged. The module lives here, and not in ``gtrs/``, so that no agent folder imports another.
 The pretrained backbone load (the checkpoint carries it), the target builder, the left/right/back
 view options (off in the shipped configs) and the unused ``ego_pose``/``ego_velocity``/

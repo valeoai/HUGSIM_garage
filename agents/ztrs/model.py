@@ -1,7 +1,7 @@
 """ZTRS model: GTRS's scorer with a policy-gradient ("rl") head and difference features on the vocabulary.
 
 From woxihuanjiangguo/ZTRS (Apache-2.0) ``navsim/agents/ztrs/hydra_model.py``, as in
-hyzhou404/NAVSIM. Dropped: the previous-frame conditioning (``ec_target`` is off in the shipped
+our NAVSIM checkout. Dropped: the previous-frame conditioning (``ec_target`` is off in the shipped
 config), the diffusion-proposal evaluation path, the back-view and NeRF options, and the
 training-time vocabulary dropout. The backbone is GTRS's.
 """

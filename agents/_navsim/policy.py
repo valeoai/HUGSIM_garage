@@ -1,10 +1,11 @@
-"""The five NAVSIM-family agents behind one ``step(obs, info) -> plan`` function.
+"""The NAVSIM-family agents behind one ``step(obs, info) -> plan`` function.
 
-Each agent reproduces, step for step, what its HUGSIM client script in hyzhou404/NAVSIM did:
-``hugsim/dataparser.py`` + ``ltf_e2e.py`` (LTF), ``dynamo_e2e.py`` (DrivoR) and
+Each agent reproduces, step for step, what its HUGSIM client script did: hyzhou404/NAVSIM's
+``hugsim/dataparser.py`` + ``ltf_e2e.py`` (LTF), and the clients we added in our NAVSIM checkout,
+``dynamo_e2e.py`` (TOAD, and DrivoR with its paper's settings) and
 ``gtrs_e2e.py``/``ztrs_e2e.py``/``gtrs_aug_e2e.py``, each with its own ``parse_raw``. The three
 GTRS-family clients and LTF share the ego-status quirk (velocity and acceleration rotated by the
-steering angle, the driving command fixed to "straight"); DrivoR passes the longitudinal speed and
+steering angle, the driving command fixed to "straight"); DrivoR and TOAD pass the longitudinal speed and
 a bicycle-model lateral acceleration instead. What distinguishes an agent (its :class:`AgentSpec`) is
 in ``agents/<name>/spec.py``; this module loads it by name, so deleting an agent's folder leaves the
 others working. ``step`` is what ``run.py`` serves and ``tools/plans.py`` replays over recorded frames.
@@ -103,7 +104,7 @@ class Policy:
     """An agent on a device: ``step(obs, info)`` is the function ``serve`` calls.
 
     ``seed``, when given, seeds torch before each step with ``seed + step index``. The original
-    clients never seeded; this only matters for DrivoR, whose CEM refinement samples noise, and
+    clients never seeded; this only matters for TOAD, whose CEM refinement samples noise, and
     makes its plans repeatable (``tools/plans.py`` uses it).
     """
 
