@@ -13,7 +13,7 @@ that uses the simulator, they live here on `main`, with their upstream status re
 **A place to gather the baseline agents.** Running a closed loop needs an AD side. Upstream's
 sat in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM), each with its own environment; here
 they are in [`agents/`](agents/README.md): UniAD and VAD with the mmcv environment they need,
-LTF, DrivoR, GTRS, ZTRS and GTRS-Aug in the simulator's own. Plugging in one of your own needs no
+LTF, DrivoR, TOAD, GTRS, ZTRS and GTRS-Aug in the simulator's own. Plugging in one of your own needs no
 fork, no config file and no edit to `closed_loop.py`, see [Agents](#agents).
 
 ## What this fork changes
@@ -97,12 +97,12 @@ launching removes an earlier run's `eval.json` and `video.mp4` from the episode 
 neither outlives a run that does not write it (an agent's refusal or `--skip-native-eval` writes
 no `eval.json`, `--video off` no `video.mp4`).
 
-The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `gtrs`, `ztrs` and `gtrs_aug`, whose
+The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `toad`, `gtrs`, `ztrs` and `gtrs_aug`, whose
 launchers are in [`agents/`](agents/README.md) (`base.<ad>_path` is
 `${oc.env:HUGSIM_AD_<NAME>,agents/...}`, so an exported variable still replaces one), and
 `dynamo` and `pictura`, which live in unrelated checkouts and read their variable alone.
 
-The agents that run in this environment (`ltf`, `drivor`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
+The agents that run in this environment (`ltf`, `drivor`, `toad`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
 `agents/registry.py`) can be called in the simulator's process instead, with `--in_process`: no
 launcher, no pipes, and a step of LTF about 1.5 times faster. See
 [agents/README.md](agents/README.md#in-process).
@@ -272,8 +272,8 @@ otherwise skipped, never run into. `--out` and `--data` reach the episodes (as `
 dataset, counting an agent's crash (or exit) as 0 and listing the episodes that produced no score:
 
 ```bash
-python run_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436 --slots 0:14 1:4
-python aggregate_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436
+python run_benchmark.py --agents uniad vad ltf drivor toad gtrs ztrs gtrs_aug --set official436 --slots 0:14 1:4
+python aggregate_benchmark.py --agents uniad vad ltf drivor toad gtrs ztrs gtrs_aug --set official436
 ```
 
 ## Environment
@@ -418,7 +418,7 @@ Here is a video for the GUI usage demonstration: [GUI Video](https://github.com/
 
 **The AD clients are in [`agents/`](agents/README.md)**, vendored from upstream's
 [UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM)
-and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, GTRS, ZTRS and GTRS-Aug run in
+and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, TOAD, GTRS, ZTRS and GTRS-Aug run in
 the pixi environment above; UniAD and VAD need the environment in `agents/_mmdet3d/` (one
 `pixi install` and two build tasks, [agents/_mmdet3d/README.md](agents/_mmdet3d/README.md)). All of
 them read their weights from `HUGSIM_AGENT_CKPTS`.
@@ -434,7 +434,7 @@ python closed_loop.py --scenario_path ./configs/benchmark/${dataset_name}/${scen
             --base_path ./configs/sim/${dataset_name}_base.yaml \
             --camera_path ./configs/sim/${dataset_name}_camera.yaml \
             --kinematic_path ./configs/sim/kinematic.yaml \
-            --ad ${method_name: [uniad, vad, ltf, drivor, gtrs, ztrs, gtrs_aug]} \
+            --ad ${method_name: [uniad, vad, ltf, drivor, toad, gtrs, ztrs, gtrs_aug]} \
             --ad_cuda ${ad_cuda}
 ```
 

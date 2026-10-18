@@ -1,13 +1,13 @@
 """Serve a NAVSIM-family agent to HUGSIM over the episode FIFOs.
 
-    python -m agents._navsim.run --agent {ltf,drivor,gtrs,ztrs,gtrs_aug} --output <episode_dir> \
+    python -m agents._navsim.run --agent {ltf,drivor,toad,gtrs,ztrs,gtrs_aug} --output <episode_dir> \
         [--device cuda|cpu] [--ckpt-root DIR]
 
 Run it from the repository root (the launchers ``agents/<agent>/launch.sh`` do). Checkpoints are
 read from ``--ckpt-root`` or ``$HUGSIM_AGENT_CKPTS``, laid out as in each agent's ``spec.py``. The device
 is ``--device``, else ``$HUGSIM_AGENT_DEVICE``, else ``cuda``. ``HUGSIM_AGENT_VIZ=1`` also writes
 the plan drawn on the front camera, and a video, to ``<episode_dir>/<agent>/``. ``HUGSIM_AGENT_SEED``
-seeds torch before each step (only DrivoR's CEM sampling is random).
+seeds torch before each step (only TOAD's CEM sampling is random).
 """
 
 import argparse

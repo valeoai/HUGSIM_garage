@@ -10,7 +10,8 @@ bring an environment of their own.
 | `uniad` | UniAD (base, e2e) | `uniad/` | `_mmdet3d/pixi.toml` | no |
 | `vad` | VAD (base) | `vad/` | `_mmdet3d/pixi.toml` | no |
 | `ltf` | Latent TransFuser | `ltf/` | the simulator's | yes |
-| `drivor` | DrivoR (4 cameras, CEM refinement) | `drivor/` | the simulator's | yes |
+| `drivor` | DrivoR (4 cameras), as its paper evaluated it on HUGSIM | `drivor/` | the simulator's | yes |
+| `toad` | TOAD: DrivoR with CEM refinement | `toad/` | the simulator's | yes |
 | `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `gtrs/` | the simulator's | yes |
 | `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `ztrs/` | the simulator's | yes |
 | `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
@@ -23,12 +24,20 @@ pytorch_lightning), not for anything they compute; their folders hold their infe
 Every agent is a folder named like its `--ad` name and like its checkpoint folder
 `$HUGSIM_AGENT_CKPTS/<name>/`, with a `launch.sh` and a `NOTICE.md` (where each file came from). The code
 the NAVSIM-family agents share is in `_navsim/` (`NOTICE.md` there too; each agent's `spec.py` is what
-distinguishes it), the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
+distinguishes it), the DrivoR model that `drivor` and `toad` both build in `_drivor/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
 imports another, so deleting one leaves the rest working (`_navsim/LICENSE` is the Apache-2.0 text of the
 NAVSIM-family code).
 
-`drivor` is the agent NAVSIM's `dynamo_e2e.sh` launched: that script loads DrivoR
-(`CONFIG_NAME = "drivor"`), not Dynamo. `dynamo` stays an external launcher (`HUGSIM_AD_DYNAMO`).
+`drivor` and `toad` run the same model and checkpoint, and differ only in their settings:
+
+* **`drivor`** is DrivoR as the DrivoR paper (arXiv 2601.05083, Table 2) evaluated it on HUGSIM: the
+  PDMS scorer weights (NC 1, DAC 1, DDC 0, TTC 5, EP 5, comfort 2) and no CEM refinement, as NAVSIM's
+  `dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml` ran it.
+* **`toad`** is what NAVSIM's `dynamo_e2e.sh` launches (`CONFIG_NAME = "drivor"`, not Dynamo):
+  DrivoR with CEM refinement of the scorer's best proposal and the PDMS weights, which is TOAD.
+  It is what `drivor` ran before the two were separated.
+
+`dynamo` stays an external launcher (`HUGSIM_AD_DYNAMO`).
 
 ## Running one
 
@@ -49,7 +58,7 @@ naming its log, rather than leaving the simulator waiting on a pipe.
 
 ### In-process
 
-The five agents that run in the simulator's environment can also be called in its process,
+The six agents that run in the simulator's environment can also be called in its process,
 with no launcher and no pipes:
 
 ```bash
@@ -74,6 +83,7 @@ Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
 | `vad/VAD_base.pth` | VAD-Base from [hustvl/VAD](https://github.com/hustvl/VAD)'s README |
 | `ltf/ltf_seed_0.ckpt` | [autonomousvision/navsim_baselines, `ltf/`](https://huggingface.co/autonomousvision/navsim_baselines/tree/main/ltf) |
 | `drivor/nav3.ckpt` | the DrivoR checkpoint NAVSIM's `dynamo_e2e.py` loaded (`ckpts/final/nav3.ckpt`); [valeoai/DrivoR](https://github.com/valeoai/DrivoR) publishes its weights in its GitHub releases |
+| `toad/nav3.ckpt` | the same file as `drivor/nav3.ckpt` |
 | `gtrs/gtrs_dense_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_dense_vov.ckpt) |
 | `gtrs/16384.npy` | the trajectory vocabulary, `traj_final/16384.npy` in [NVlabs/GTRS](https://github.com/NVlabs/GTRS) |
 | `ztrs/ztrs_vov.ckpt` | [Zzxxxxxxxx/ZTRS](https://huggingface.co/Zzxxxxxxxx/ZTRS/blob/main/ztrs_vov.ckpt) |
@@ -93,10 +103,10 @@ These are how the original clients drove HUGSIM, so they are kept:
   original clients commented out `info['command']`. UniAD and VAD read it.
 * **VAD runs in training mode**: upstream never called `model.eval()`, so GridMask and dropout
   stay active and its plans are stochastic. `HUGSIM_VAD_EVAL=1` turns that off.
-* **DrivoR's CEM refinement samples noise** and the original client never seeded it.
+* **TOAD's CEM refinement samples noise** and the original client never seeded it.
   `HUGSIM_AGENT_SEED` seeds it (`seed + step` before each step, on a forked RNG, so in-process
   it leaves the simulator's own random stream alone).
-* **LTF and DrivoR ran on the CPU** (the model was never moved to the GPU). They now run on
+* **LTF and DrivoR/TOAD ran on the CPU** (the model was never moved to the GPU). They now run on
   the GPU with TF32 off for their step, which keeps their plans within 2e-5 m of the CPU ones;
   `HUGSIM_AGENT_DEVICE=cpu` runs the old path.
 
@@ -137,7 +147,7 @@ launcher also takes a `<name>_path` line in the `configs/sim/*_base.yaml` (or a 
 straight plan; `tools/plans.py` (NAVSIM family) and `_mmdet3d/plans.py` replay those frames through
 an agent offline. That is how each agent here was checked against its original client: on 16
 frames of nuScenes scene-0383 easy, GTRS, ZTRS, GTRS-Aug, UniAD and VAD give the same plans to the
-bit, LTF and DrivoR within 2e-5 m, with the same proposal chosen on every frame.
+bit, LTF and TOAD within 2e-5 m, with the same proposal chosen on every frame.
 
 ```bash
 HUGSIM_RECORD_OUT=/tmp/frames HUGSIM_RECORD_STEPS=16 python closed_loop.py ... --ad record --ad_path agents/tools/record.sh
