@@ -10,10 +10,11 @@ agents that drive in it. The simulator and the data are Zhou et al.'s work ([pap
 we opened four days later is still open. Rather than carry fixes as patches in every project
 that uses the simulator, they live here on `main`, with their upstream status recorded below.
 
-**A place to gather the baseline agents.** Running a closed loop needs an AD side, and those sit
-in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM, and whatever you are building). The
-interface for plugging one in is described under [Agents](#agents) and needs no fork, no config
-file and no edit to `closed_loop.py`.
+**A place to gather the baseline agents.** Running a closed loop needs an AD side. Upstream's
+sat in separate repositories (UniAD_SIM, VAD_SIM, NAVSIM), each with its own environment; here
+they are in [`agents/`](agents/README.md): UniAD and VAD with the mmcv environment they need,
+LTF, DrivoR, GTRS, ZTRS and GTRS-Aug in the simulator's own. Plugging in one of your own needs no
+fork, no config file and no edit to `closed_loop.py`, see [Agents](#agents).
 
 ## What this fork changes
 
@@ -62,14 +63,32 @@ height; reactive agents gain, because it was also inventing collisions overhead.
 
 * **No absolute paths in the configs.** Every root is an `${oc.env:VAR}` interpolation, so one
   checkout serves any machine. See [Agents](#agents).
+* **Two benchmark sets, one scene tree.** `prechallenge345` (the 345 scenarios of the 2025-07
+  release) and `official436` (the current one) share one scene tree and one 3DRealCar copy, and
+  [`prepare_benchmark.py`](#benchmark-sets) builds the layout from the pinned Hugging Face
+  revisions and repairs the scenarios that do not run as shipped. The sweep scripts take the set as
+  an argument and episodes are filed under it.
 * **Three observation modes.** Besides the Gaussian render (`rgb`), an agent can be handed the
   scene as geometry, `sim/scene_export/` (typed road segments, actor cuboids, the route), and
   asked to read it as it is (`vector`) or to draw it with its own renderer (`raster`). See
   [Observation modes](#observation-modes).
+* **The realized score, TerraTransfer's closed-loop HD-Score**, beside HUGSIM's own `hdscore`:
+  `--realized_score` per episode, `score_realized.py` for past runs. See [Scoring](#scoring).
 * **Extra flags from the sweep scripts.** `run_dataset.sh` and `run_single.sh` append
   `HUGSIM_ARGS`, split on whitespace, to every `closed_loop.py` call. `run_dataset.sh` refuses
   `--output_dir`, `--ad`, `--base_path` and `--scenario_path` there, since they pick the episode
   folder its `eval.json` skip reads. See [Running a variant](#running-a-variant).
+* **The baseline agents ship in [`agents/`](agents/README.md).** The configs' `base.<ad>_path` is
+  `${oc.env:HUGSIM_AD_<NAME>,agents/...}`: the in-repo launcher unless the variable is exported.
+  A relative launcher path is taken against this checkout before the cwd. Their weights come from
+  `HUGSIM_AGENT_CKPTS`, which `closed_loop.py` checks before launching one of them.
+* **`--in_process`** calls an agent's step function in the simulator's process instead of over
+  the pipes, for the agents in `agents/registry.py`. The default stays the FIFO.
+* **An agent that exits early no longer hangs the episode.** `closed_loop.py` watches the
+  launcher's process and, once it is gone, releases whichever pipe the simulator waits on; the
+  episode then ends with an error naming the agent's exit code and log. The launcher runs in a
+  session of its own and its whole process group is killed at the end, so an agent behind
+  `pixi run` or `conda run` (which fork rather than exec) is not left holding its GPU.
 
 # Agents
 
@@ -79,7 +98,7 @@ over two FIFOs in that directory. Point the simulator at it in whichever way sui
 ```bash
 python closed_loop.py --scenario_path ... --base_path ./configs/sim/nuscenes_base.yaml \
     --camera_path ./configs/sim/nuscenes_camera.yaml --kinematic_path ./configs/sim/kinematic.yaml \
-    --ad my_agent --ad_path /path/to/my_e2e.sh --output_dir /where/episodes/go
+    --ad my_agent --ad_path /path/to/my_e2e.sh --output_dir /where/episodes/go/nuscenes_
 ```
 
 `--ad_path` wins; otherwise `base.<ad>_path` from the config; otherwise the environment variable
@@ -90,9 +109,15 @@ launching removes an earlier run's `eval.json` and `video.mp4` from the episode 
 neither outlives a run that does not write it (an agent's refusal or `--skip-native-eval` writes
 no `eval.json`, `--video off` no `video.mp4`).
 
-The shipped configs name `uniad`, `vad`, `ltf`, `dynamo`, `gtrs`, `ztrs`, `gtrs_aug` and
-`pictura`, each reading its own variable, because these live in unrelated checkouts and share no
-root.
+The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `gtrs`, `ztrs` and `gtrs_aug`, whose
+launchers are in [`agents/`](agents/README.md) (`base.<ad>_path` is
+`${oc.env:HUGSIM_AD_<NAME>,agents/...}`, so an exported variable still replaces one), and
+`dynamo` and `pictura`, which live in unrelated checkouts and read their variable alone.
+
+The agents that run in this environment (`ltf`, `drivor`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
+`agents/registry.py`) can be called in the simulator's process instead, with `--in_process`: no
+launcher, no pipes, and a step of LTF about 1.5 times faster. See
+[agents/README.md](agents/README.md#in-process).
 
 ## Observation modes
 
@@ -136,9 +161,10 @@ at its first step: it says why in its log (its stdout and stderr go to the episo
 `output.txt`) and answers `None` on `plan_pipe`. `closed_loop.py` then ends the episode and
 sends `'Done'`. The episode folder has no `eval.json` and its `data.pkl` holds no frames, so
 `get_score.py` lists the scenario as missing; `closed_loop.py` still exits 0. An agent must
-answer, and then read that `'Done'`: one that raises or exits instead leaves `closed_loop.py`
-blocked on a pipe until something kills it, since nothing watches the agent's process during
-the episode.
+answer, and then read that `'Done'`. One that exits instead is caught: `closed_loop.py` watches
+the launcher's process, releases the pipe it waits on, and ends the episode with an error naming
+the agent's exit code and `output.txt` (agents/client.py's `serve` keeps both promises for the
+agents in `agents/`).
 
 Neither abstract mode renders the cameras each step. Before the modes, an agent on the export
 still had all six cameras rendered and piped to it every step, and it never read them. The
@@ -153,7 +179,7 @@ The shipped configs run `pictura` in `raster`; a vector checkpoint runs as a var
 ### Running a variant
 
 Episode folders are named after the agent and the scenario's difficulty, not the observation
-mode (`<dataset>_<agent>/<scene>_<difficulty>`, e.g. `nuscenes_pictura/scene-0383_easy_00`), so
+mode (`<set>/<dataset>_<agent>/<scene>_<difficulty>`, e.g. `official436/nuscenes_pictura/scene-0383_easy_00`), so
 a variant, a vector checkpoint say, runs under an agent name of its own. From the sweep scripts,
 its flags go in `HUGSIM_ARGS`, an environment variable that `run_dataset.sh` and `run_single.sh`
 split on whitespace and append to every `closed_loop.py` call. The variant's name reads none of
@@ -167,14 +193,12 @@ agent picks its checkpoint from its own environment (Pictura's reads `PICTURA_CH
 PICTURA_CHECKPOINT=/path/to/vector.pt HUGSIM_AD_PICTURA_VECTOR=/path/to/Pictura-dev/hugsim_e2e.sh HUGSIM_ARGS="--obs_mode vector" bash run_dataset.sh pictura_vector nuscenes 0 0
 ```
 
-These episodes land in `$HUGSIM_OUT/nuscenes_pictura_vector/`. `run_dataset.sh`'s skip, which
-lets a forward and a reverse worker split the scenes, looks for them under the `OUTPUT_PATH` set
-at the top of the script: it must be the same tree as `$HUGSIM_OUT`, as it is in the shipped
-`hugsim_env.sh`. `get_score.py` takes no arguments: to score the variant, edit its constants
-`MODEL_NAME` and `BENCH_ROOT` to `pictura_vector` and that tree. `run_all.sh` and
-`run_sweep.sh` take the agent name and pass it on. Any other `HUGSIM_ARGS` that changes what
-an episode is, such as another `--kinematic_path` (dt 0.1) or `--deterministic_tracker`, needs an
-agent name of its own
+These episodes land in `$HUGSIM_OUT/official436/nuscenes_pictura_vector/`. `run_dataset.sh`'s
+skip, which lets a forward and a reverse worker split the scenes, looks for them there, under the
+same `$HUGSIM_OUT` that `closed_loop.py` writes to. `python get_score.py official436 pictura_vector`
+scores the variant. `run_all.sh` and `run_sweep.sh` take the agent name and pass it on. Any other
+`HUGSIM_ARGS` that changes what an episode is, such as another `--kinematic_path` (dt 0.1) or
+`--deterministic_tracker`, needs an agent name of its own
 too, and the mode again: a `pictura` variant without `--obs_mode raster` runs in `rgb`, and
 Pictura refuses every episode.
 
@@ -188,16 +212,94 @@ folder `run_dataset.sh` checks for `eval.json`. `--skip-native-eval` writes no `
 that check never sees a finished scene: run one worker then, not a forward and reverse pair. Calling `closed_loop.py` directly,
 `--ad pictura_vector --ad_path ...` and `--output_dir` both work.
 
+## Scoring
+
+Two scores, for two questions:
+
+| | what it judges | where |
+|---|---|---|
+| `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written at the end of every episode unless `--skip-native-eval` is passed or HUGSIM's scorer fails on it (`get_score.py` averages them) |
+| the realized score, TerraTransfer's closed-loop HD-Score ([arXiv 2606.17386](https://arxiv.org/abs/2606.17386), App. B) | the **realized** trajectory: per 0.5 s keyframe NC and DAC at the ego's pose, TTC propagated 1 s ahead, comfort over the next 1 s | `realized_score.json` with `--realized_score`, or `score_realized.py` for past runs |
+
+`hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
+comparable with TerraTransfer, and with any agent that, like its jerk policy, has no
+multi-second plan to score. It reads only what an episode already saves, so every past run can
+be rescored:
+
+```bash
+python score_realized.py --runs official436/nuscenes_uniad official436/nuscenes_vad --out realized.json   # under $HUGSIM_OUT
+```
+
+`realized_score.json` (and each entry of `score_realized.py`'s output) carries the three HD-Score
+variants side by side:
+
+| key | score | route completion |
+|---|---|---|
+| `hdscore` | HUGSIM's, of the planned trajectory, copied from `eval.json` (`null` without one, e.g. `--skip-native-eval`) | HUGSIM's |
+| `hdscore_realized` | TerraTransfer's, of the realized trajectory | HUGSIM's index fraction, `rc`: the ICLR 2027 submission's choice, comparable with HUGSIM's published numbers |
+| `hdscore_realized_arclength` | the same | arc-length fraction of the recorded track, `rc_arclength` (arXiv v1/v2) |
+
+The two realized variants differ only by route completion; the index one is usually the higher
+(about 1.14x on average). The comfort term is only comparable at the same simulator step: the window is fixed in
+seconds, but jerk is a third finite difference at dt, and the paper runs at dt = 0.1 s
+(`configs/sim/kinematic_10hz.yaml`). `sim/utils/realized_score.py` has the definitions.
+
+Not every episode gets a score. With `--realized_score`, an episode the agent ended by answering
+`None` is recorded as `{"crashed": true}`; offline, `score_realized.py` records one as crashed
+when the agent left a crash marker (`agent_crash.txt` from `agents/client.py`, or Pictura's
+`pictura_crash.json`), and one with fewer than two frames (an agent that refused at its first step)
+as `{"too_short": true}`. An agent that exits outright ends the episode before anything is written,
+so that episode has no score file at all. `score_realized.py` keeps a cached score only while it
+matches the episode's `data.pkl`, and retries everything else on every pass.
+
+`--outputs scoring` makes an episode write only what scoring needs. Each episode folder normally
+carries `ground.ply` (~11 MB) and `scene.ply` (~31 MB), the scene's Gaussians by semantics, a property
+of the scene rather than the episode, plus `infos.pkl` and a ~9 MB `video.mp4`. Both scorers only ask
+point questions about the ego's box at poses known from `data.pkl` (the planned poses and the
+poses displaced by velocity x 0.5 s and 1.0 s for HUGSIM's, the recorded poses and their 0.2 s
+propagations to 1 s for the realized one), so `sim/utils/score_corridor.py` keeps the points within
+half the footprint diagonal plus 0.5 m of those poses (~3 MB); no other point can matter to a score.
+With `--outputs scoring` the env writes no clouds, there is no `infos.pkl`, `--video` defaults to
+`off` (an explicit `--video` wins), the cropped clouds are written as `ground.ply` / `scene.ply` (so
+`score_realized.py` still rescores the folder), and both scorers run on those in-memory arrays. The
+scores are identical in practice to `--outputs full`, the default, which writes everything as before
+(the CPU drivable-area path is bitwise identical; the GPU background check is identical up to float32
+rounding of a point lying on a box face, since a cuBLAS matmul over the subset can round 1 ulp
+differently from one over the full cloud: no difference was seen over 20,736 box queries). HUGSIM's
+drivable-area check also looks only at the ground points near each waypoint (`FAST_SCORING` in
+`score_calculator.py`, bitwise identical; set it to `False` for the original full-cloud loop).
+Together with the cropped clouds, HUGSIM's scorer went from 53.2 s to 3.2 s an episode on average
+over 40 past episodes.
+
+To evaluate agents on a whole set, `run_benchmark.py` runs the episodes in parallel, several per
+GPU, each with `--outputs scoring --realized_score` (agents in `agents/registry.py` in-process),
+skips the ones already scored, and retries a failure once. A start that finds no room on its GPU
+(it waits for the job's memory to be free, at most 30 minutes, then releases the GPU and requeues
+the job) or an episode that dies out of memory is requeued without using that retry, up to 5 times.
+An agent that crashed of the GPU's memory is re-run too (its crash record is dropped, also from a
+run made before this existed); on the last attempt the record is kept, with `"gpu_crash": true`. An
+exception in the runner itself requeues the job as a failed attempt. An episode folder that is a
+symlink (reused from another set) counts as done if its target holds a `realized_score.json` and is
+otherwise skipped, never run into. `--out` and `--data` reach the episodes (as `HUGSIM_OUT` /
+`HUGSIM_DATA`). `aggregate_benchmark.py` then prints the three HD-Score variants per agent and
+dataset, counting an agent's crash (or exit) as 0 and listing the episodes that produced no score:
+
+```bash
+python run_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436 --slots 0:14 1:4
+python aggregate_benchmark.py --agents uniad vad ltf drivor gtrs ztrs gtrs_aug --set official436
+```
+
 ## Environment
 
-The configs interpolate these; `closed_loop.py` checks only the ones a given run reads and
-reports them all at once:
+The configs interpolate these (all but `HUGSIM_AGENT_CKPTS`, which the agents in `agents/` read
+themselves); `closed_loop.py` checks only the ones a given run reads and reports them all at once:
 
 | variable | what it is |
 |---|---|
-| `HUGSIM_DATA` | the data tree (`HUGSIM-public` / `HUGSIM-private`) |
-| `HUGSIM_OUT` | where episode folders are written, or pass `--output_dir` |
-| `HUGSIM_AD_<NAME>` | one per agent, or pass `--ad_path` |
+| `HUGSIM_DATA` | the tree holding `HUGSIM/` (3DRealCar, scenes, the two benchmark sets), built by [`prepare_benchmark.py`](#benchmark-sets) |
+| `HUGSIM_OUT` | where episode folders are written (`$HUGSIM_OUT/<set>/<dataset>_<agent>/`), or pass `--output_dir`, which is used as given (no `<set>` folder; the agent name is appended to it) |
+| `HUGSIM_AD_<NAME>` | an agent's launcher, or pass `--ad_path`; needed only for agents not in `agents/` |
+| `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)) |
 | `NUSCENES_RAW` | raw nuScenes, read only by scenarios with `load_HD_map: true` |
 
 ---
@@ -252,8 +354,55 @@ We've made some changes in the capturing and reloading code. If you would like t
 
 # Vehicles, Scenes and Scenarios
 
-We have released all 3DRealCar files, along with the complete set of scenes and scenarios, at [release link](https://huggingface.co/datasets/XDimLab/HUGSIM). 
-We are also holding a competition at [RealADSim @ ICCV 2025](https://huggingface.co/spaces/XDimLab/ICCV2025-RealADSim-ClosedLoop), so some scenarios and scenarios are hosted privately. We welcome participants to join!
+Upstream released all 3DRealCar files, the scenes and the scenarios at [release link](https://huggingface.co/datasets/XDimLab/HUGSIM).
+They are released in two stages, around the [RealADSim @ ICCV 2025](https://huggingface.co/spaces/XDimLab/ICCV2025-RealADSim-ClosedLoop) competition,
+and the second changed the scenarios, so a benchmark number needs to say which set it is on.
+
+## Benchmark sets
+
+| set | scenarios | what it is |
+|---|---|---|
+| `official436` (default) | nuScenes 88, PandaSet 127, KITTI-360 113, Waymo 108 | the current release (2025-10-31), the benchmark published HUGSIM numbers are on |
+| `prechallenge345` | nuScenes 87, PandaSet 51, KITTI-360 79, Waymo 128 | the release before the held-back scenes went up (2025-07-07), the protocol older papers report |
+
+The sets overlap. The 2025-10-31 release retired 94 of the 345 and moved the actors in 15 of the
+rest, so a scenario file of the same name can differ between them: each set has its own copy of every
+file. They share one scene tree (all 82 scenes) and the 3DRealCar vehicles.
+`prepare_benchmark.py` builds the layout from the two pinned Hugging Face revisions:
+
+```
+$HUGSIM_DATA/HUGSIM/3DRealCar/<id>/{gs.pth,wlh.json}
+$HUGSIM_DATA/HUGSIM/nusc_map_cache/nusc_trainval/
+$HUGSIM_DATA/HUGSIM/ss/scenes/<dataset>/<scene>/
+$HUGSIM_DATA/HUGSIM/ss/scenarios/{prechallenge345,official436}/<dataset>/<scenario>.yaml
+```
+
+```bash
+python prepare_benchmark.py --root /data/hugsim --from-hf --dry-run      # sizes (about 41 GB of scenes), nothing written
+python prepare_benchmark.py --root /data/hugsim --from-hf                # download everything
+python prepare_benchmark.py --root /data/hugsim --verify                 # counts, scenes, vehicles, repairs
+export HUGSIM_DATA=/data/hugsim
+```
+
+The release's scenarios do not run as shipped, so the script repairs them (the vehicle asset
+`<id>/postprocess/shadow.pth` becomes `<id>`, `ConstantPlanner`'s `max_t` is dropped, `start_velo:
+1R` becomes `1`); `--verify` fails on a scenario that still needs one. A one-time migration of an install from before this layout, without downloading it again, is
+`--from-install OLD_ROOT` (it links the old install's data and only fetches the two small
+`scenarios.zip` files; `--scenarios-zip-pre` / `--scenarios-zip-official` take local copies).
+
+`run_dataset.sh`, `run_all.sh` and `run_sweep.sh` take the set as their last argument
+(`official436` by default). `closed_loop.py` reads the set off the scenario's path
+(`.../ss/scenarios/<set>/<dataset>/`), so an episode lands in
+`$HUGSIM_OUT/<set>/<dataset>_<agent>/<scene>_<mode>` and a scenario that is in both sets never
+overwrites the other's run; a scenario outside those folders (`configs/benchmark/`) keeps
+`$HUGSIM_OUT/<dataset>_<agent>/`. `python get_score.py <set> <agent>` scores one set: it counts
+only the episodes that are scenarios of that set, lists other folders as ignored and scenarios
+never run as missing.
+
+Migrating old results: episode folders from the old install's public scenarios belong under
+`$HUGSIM_OUT/prechallenge345/`, and the `*_private_*` ones under `$HUGSIM_OUT/official436/`. Do
+not move public folders into `official436`: that set retired 94 of the public scenarios and
+changed the actors in 15 more, so they would mix other scenarios into its mean.
 
 # Scenarios configuration with GUI
 
@@ -280,9 +429,12 @@ Here is a video for the GUI usage demonstration: [GUI Video](https://github.com/
 
 # Simulation
 
-**Before simulation, [UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM) and [NAVSIM](https://github.com/hyzhou404/NAVSIM) client should be installed. The client environments are allowed to be separated from the HUGSIM environment.**
-
-The dependencies for NAVSIM are already specified as the pixi environment file, so you don't need to manually install the dependencies.
+**The AD clients are in [`agents/`](agents/README.md)**, vendored from upstream's
+[UniAD_SIM](https://github.com/hyzhou404/UniAD_SIM), [VAD_SIM](https://github.com/hyzhou404/VAD_SIM)
+and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, GTRS, ZTRS and GTRS-Aug run in
+the pixi environment above; UniAD and VAD need the environment in `agents/_mmdet3d/` (one
+`pixi install` and two build tasks, [agents/_mmdet3d/README.md](agents/_mmdet3d/README.md)). All of
+them read their weights from `HUGSIM_AGENT_CKPTS`.
 
 In **closed_loop.py**, we automatically launch autonomous driving algorithms.
 
@@ -295,7 +447,7 @@ python closed_loop.py --scenario_path ./configs/benchmark/${dataset_name}/${scen
             --base_path ./configs/sim/${dataset_name}_base.yaml \
             --camera_path ./configs/sim/${dataset_name}_camera.yaml \
             --kinematic_path ./configs/sim/kinematic.yaml \
-            --ad ${method_name: [uniad, vad, ltf]} \
+            --ad ${method_name: [uniad, vad, ltf, drivor, gtrs, ztrs, gtrs_aug]} \
             --ad_cuda ${ad_cuda}
 ```
 
@@ -320,19 +472,12 @@ for cfg in ${scenario_dir}/*.yaml; do
 done
 ```
 
-In practice, you may encounter errors due to an incorrect environment, path, and etc. For debugging purposes, you can modify the last part of code as:
-```python
-# process = launch(ad_path, args.ad_cuda, output)
-# try:
-#     create_gym_env(cfg, output)
-#     check_alive(process)
-# except Exception as e:
-#     print(e)
-#     process.kill()
-
-# For debug
-create_gym_env(cfg, output)
-```
+In practice, you may encounter errors due to an incorrect environment, path, and etc. The agent's
+own output is in `<episode>/output.txt`, and a step that raised leaves its traceback in
+`<episode>/agent_crash.txt`. To debug the agent by hand, replace the launch at the end of
+`closed_loop.py` with `create_gym_env(cfg, output, FifoAgent(output, process=None))` and start the
+agent yourself on the episode folder; an agent in `agents/registry.py` can instead run with
+`--in_process`, where a breakpoint in its step stops the simulator too.
 
 # TODO list
 - [x] Release sample data and results

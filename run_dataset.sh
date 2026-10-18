@@ -1,14 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-DATA_ROOT=/home/yyin5/mack/datasets_mack_raw
-OUTPUT_PATH=/home/yyin5/mack/yyin5/HUGSIM/outputs/benchmark_drivor_mpc
-
 usage() {
-    echo "Usage: $0 <agent_name> <dataset> <sim_cuda> <ad_cuda> [scenario_order] [split]"
+    echo "Usage: $0 <agent_name> <dataset> <sim_cuda> <ad_cuda> [scenario_order] [set]"
     echo "  scenario_order: forward (default) or reverse -- run two workers from opposite"
     echo "                  ends of the list; finished scenes are skipped via their eval.json."
-    echo "  split:          public (default) or private"
+    echo "  set:            official436 (default) or prechallenge345 (README.md, Benchmark sets)"
     echo "  HUGSIM_ARGS:    env var, extra closed_loop.py arguments split on whitespace, but not"
     echo "                  --ad/--base_path/--scenario_path/--output_dir. Flags that change the"
     echo "                  episode (--obs_mode, --kinematic_path, --raster_*) need an agent name of"
@@ -34,12 +31,16 @@ fi
 sim_cuda=${3}
 ad_cuda=${4}
 scenario_order=${5:-forward}
-split=${6:-public}
+scenario_set=${6:-official436}
 
 if [ "${scenario_order}" != "forward" ] && [ "${scenario_order}" != "reverse" ]; then
     echo "Error: scenario_order must be either 'forward' or 'reverse'."
     usage; exit 1
 fi
+
+# The scenarios come from, and the episodes go to, the same roots closed_loop.py reads.
+: "${HUGSIM_DATA:?HUGSIM_DATA is not set: the tree prepare_benchmark.py built (README.md, Environment)}"
+: "${HUGSIM_OUT:?HUGSIM_OUT is not set: where episode folders are written (README.md, Environment)}"
 
 read -r -d '' -a hugsim_args <<< "${HUGSIM_ARGS-}" || true
 # The skip below looks for eval.json in the folder --ad, --base_path, --scenario_path and --output_dir
@@ -56,26 +57,19 @@ for arg in ${hugsim_args[@]+"${hugsim_args[@]}"}; do
     done
 done
 
-# The public/private split differs in exactly three things: where the scenarios live, which
-# base config carries the output_dir, and how the per-agent output group is named.
-case "${split}" in
-    public)
-        scenario_dir="${DATA_ROOT}/HUGSIM-public/ss/scenarios/${DATASET}"
-        base_cfg="./configs/sim/${DATASET}_base.yaml"
-        out_group="${DATASET}_${AGENT}"
-        ;;
-    private)
-        scenario_dir="${DATA_ROOT}/HUGSIM-private/ss/scenarios/${DATASET}"
-        base_cfg="./configs/sim/${DATASET}_private.yaml"
-        out_group="${DATASET}_private_${AGENT}"
-        ;;
+case "${scenario_set}" in
+    official436|prechallenge345) ;;
     *)
-        echo "Error: split must be either 'public' or 'private'."
+        echo "Error: set must be either 'official436' or 'prechallenge345'."
         usage; exit 1
         ;;
 esac
+scenario_dir="${HUGSIM_DATA}/HUGSIM/ss/scenarios/${scenario_set}/${DATASET}"
+base_cfg="./configs/sim/${DATASET}_base.yaml"
+# closed_loop.py files an episode under the set its scenario is in: $HUGSIM_OUT/<set>/<dataset>_<agent>/.
+out_group="${scenario_set}/${DATASET}_${AGENT}"
 
-echo "--- Processing dataset: ${DATASET} (${split}, ${scenario_order}) ---"
+echo "--- Processing dataset: ${DATASET} (${scenario_set}, ${scenario_order}) ---"
 
 # Check if scenario files exist to avoid errors with glob
 if ! ls "${scenario_dir}"/*.yaml 1> /dev/null 2>&1; then
@@ -97,7 +91,7 @@ for cfg in "${scenario_files[@]}"; do
     mode=$(grep "mode:" "$cfg" | sed 's/mode:[ ]*//')
 
     # --- build output dir path ---
-    out_dir="${OUTPUT_PATH}/${out_group}/${scene_name}_${mode}"
+    out_dir="${HUGSIM_OUT}/${out_group}/${scene_name}_${mode}"
 
     # --- skip only if eval output already exists ---
     if [ -f "$out_dir/eval.json" ]; then
