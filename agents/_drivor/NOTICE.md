@@ -5,7 +5,7 @@ inside HUGSIM's environment needs: the nuplan devkit, hydra, Lightning, ray and 
 code path are removed, hydra configs become explicit dataclasses, pretrained backbones are not
 fetched at construction (the checkpoints carry them), and the HUGSIM client scripts are folded into
 `../_navsim/policy.py` and this folder's `client.py`. The DrivoR model is shared by `../drivor/` (DrivoR),
-`../toad/` (TOAD, DrivoR with CEM refinement) and `../toad_release/` (TOAD with its released CEM settings), which differ only in their settings. Apart from the CEM
+`../drivor_paper/` (DrivoR with its paper's scorer weights) and `../toad/` (TOAD, DrivoR with CEM refinement as released), which differ only in their settings. Apart from the CEM
 refinement, the files match valeoai/DrivoR's inference code up to a `None` guard on missing cameras,
 the remapping of legacy checkpoint key prefixes, and removed prints and training code.
 
@@ -20,4 +20,4 @@ The agent reaches this repository through our own HUGSIM client for it, `dynamo_
 Written for this port: `client.py` (`drivor_choice`). The shared files it imports from `../_navsim/` are listed in `../_navsim/NOTICE.md`.
 
 
-The checkpoint is not part of this repository; it has its own licence (NAVSIM/OpenScene data licence, and that of the project above). It is read from `$HUGSIM_AGENT_CKPTS/drivor/`, `$HUGSIM_AGENT_CKPTS/toad/` and `$HUGSIM_AGENT_CKPTS/toad_release/`.
+The checkpoint is not part of this repository; it has its own licence (NAVSIM/OpenScene data licence, and that of the project above). It is read from `$HUGSIM_AGENT_CKPTS/drivor/`, `$HUGSIM_AGENT_CKPTS/drivor_paper/` and `$HUGSIM_AGENT_CKPTS/toad/`.

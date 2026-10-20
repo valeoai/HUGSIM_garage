@@ -12,8 +12,7 @@ bring an environment of their own.
 | `ltf` | Latent TransFuser | `ltf/` | the simulator's | yes |
 | `drivor` | [DrivoR](https://github.com/valeoai/DrivoR) (4 cameras), with its default scorer weights | `drivor/` | the simulator's | yes |
 | `drivor_paper` | DrivoR as its paper evaluated it on HUGSIM | `drivor_paper/` | the simulator's | yes |
-| `toad` | [TOAD](https://github.com/valeoai/TOAD): DrivoR with CEM refinement, as the HUGSIM client ran it | `toad/` | the simulator's | yes |
-| `toad_release` | TOAD with the CEM settings of its released code | `toad_release/` | the simulator's | yes |
+| `toad` | [TOAD](https://github.com/valeoai/TOAD): DrivoR with CEM refinement, as released | `toad/` | the simulator's | yes |
 | `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `gtrs/` | the simulator's | yes |
 | `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `ztrs/` | the simulator's | yes |
 | `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
@@ -26,11 +25,11 @@ pytorch_lightning), not for anything they compute; their folders hold their infe
 Every agent is a folder named like its `--ad` name and like its checkpoint folder
 `$HUGSIM_AGENT_CKPTS/<name>/`, with a `launch.sh` and a `NOTICE.md` (where each file came from). The code
 the NAVSIM-family agents share is in `_navsim/` (`NOTICE.md` there too; each agent's `spec.py` is what
-distinguishes it), the DrivoR model that `drivor`, `drivor_paper`, `toad` and `toad_release` all build in `_drivor/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
+distinguishes it), the DrivoR model that `drivor`, `drivor_paper` and `toad` all build in `_drivor/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
 imports another, so deleting one leaves the rest working (`_navsim/LICENSE` is the Apache-2.0 text of the
 NAVSIM-family code).
 
-`drivor`, `drivor_paper`, `toad` and `toad_release` run the same model and checkpoint, and differ only in their settings:
+`drivor`, `drivor_paper` and `toad` run the same model and checkpoint, and differ only in their settings:
 
 * **`drivor`** is DrivoR with the official implementation's default scorer weights (NC 1, DAC 1,
   DDC 0, TTC 5, EP 5, comfort 2), the ones TOAD uses too, and no CEM refinement.
@@ -38,17 +37,15 @@ NAVSIM-family code).
   HUGSIM: the scorer weights of that run (NC 1, DAC 1.6, DDC 0, TTC 8.1, EP 11.2, comfort 2, logged
   in each of its episodes, November 2025) and no CEM refinement. `dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml`
   in our NAVSIM checkout keeps these weights commented out since January 2026.
-* **`toad`** is what our `dynamo_e2e.sh` HUGSIM client launches (`CONFIG_NAME = "drivor"`, not Dynamo):
-  DrivoR with CEM refinement of the scorer's best proposal and the PDMS weights, which is TOAD.
-  It is what `drivor` ran before the two were separated (results of that time: README.md,
-  *Results written before agents/toad*). Two of its CEM settings differ from TOAD's
-  released code: the update smoothing `cem_alpha` is 0.7 (1.0 there) and sampled controls are
-  clamped at 5.0 times the kinematic limits (1.5 there).
-* **`toad_release`** is TOAD with its released code's CEM settings (`cem_alpha` 1.0, a 1.5 clamp,
-  `cem_control_margin` in `_drivor/config.py`); the rest, checkpoint included, is `toad`'s.
+* **`toad`** is TOAD as released (valeoai/TOAD at cfa88e0): DrivoR with CEM refinement of the
+  scorer's best proposal, the PDMS weights, and the released CEM settings (`cem_alpha` 1.0, controls
+  clamped at 1.5 times the kinematic limits). Until October 2026 it used the two CEM settings of our
+  `dynamo_e2e.sh` HUGSIM client instead (`cem_alpha` 0.7, a 5.0 clamp); TOAD results of that time,
+  including what `drivor` ran before the two were separated (README.md, *Results written before
+  agents/toad*), are that version's.
 
 `dynamo` stays an external launcher (`HUGSIM_AD_DYNAMO`). The `dynamo_e2e.sh` that `hugsim_env.sh`
-points it at is the client `toad` came from, so `--ad dynamo` with it runs TOAD too, not Dynamo.
+points it at is the client `toad` came from, so `--ad dynamo` with it runs TOAD (with the client's CEM settings), not Dynamo.
 
 ## Running one
 
@@ -94,7 +91,7 @@ Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
 | `vad/VAD_base.pth` | VAD-Base from [hustvl/VAD](https://github.com/hustvl/VAD)'s README |
 | `ltf/ltf_seed_0.ckpt` | [autonomousvision/navsim_baselines, `ltf/`](https://huggingface.co/autonomousvision/navsim_baselines/tree/main/ltf) |
 | `drivor/drivor_Nav1_25epochs.pth` | [valeoai/DrivoR's `model_weights` release](https://github.com/valeoai/DrivoR/releases/download/model_weights/drivor_Nav1_25epochs.pth) (the NAVSIM-v1 model; sha256 `e1a678f2…`). `ckpts/final/nav3.ckpt` of our NAVSIM checkout, which our `dynamo_e2e.py` loaded, holds the same 467 tensors in another container, but the agents read only the released file: a checkpoint root with only `nav3.ckpt` needs it downloaded |
-| `drivor_paper/drivor_Nav1_25epochs.pth`, `toad/drivor_Nav1_25epochs.pth`, `toad_release/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a copy or a symlink to it) |
+| `drivor_paper/drivor_Nav1_25epochs.pth`, `toad/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a copy or a symlink to it) |
 | `gtrs/gtrs_dense_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_dense_vov.ckpt) |
 | `gtrs/16384.npy` | the trajectory vocabulary, `traj_final/16384.npy` in [NVlabs/GTRS](https://github.com/NVlabs/GTRS) |
 | `ztrs/ztrs_vov.ckpt` | [Zzxxxxxxxx/ZTRS](https://huggingface.co/Zzxxxxxxxx/ZTRS/blob/main/ztrs_vov.ckpt) |
