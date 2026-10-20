@@ -9,7 +9,6 @@ from utils.sh_utils import RGB2SH, SH2RGB
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-import open3d as o3d
 import tinycudann as tcnn
 from io import BytesIO
 
@@ -293,6 +292,7 @@ class ObjModel:
             f.write(buffer.getvalue())
 
     def save_semantic_pcd(self, path):
+        import open3d as o3d  # imported here: loading it costs ~5 s of an episode's start-up
         color_dict = {
             0: np.array([128, 64, 128]),  # Road
             1: np.array([244, 35, 232]),  # Sidewalk
@@ -332,6 +332,7 @@ class ObjModel:
         o3d.io.write_point_cloud(path, smt_pcd)
 
     def save_vis_ply(self, path):
+        import open3d as o3d  # imported here: loading it costs ~5 s of an episode's start-up
         mkdir_p(os.path.dirname(path))
         xyz = self.get_xyz.detach().cpu().numpy()
         pcd = o3d.geometry.PointCloud()

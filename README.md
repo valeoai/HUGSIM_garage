@@ -126,9 +126,14 @@ What an agent is handed each step is its mode, `base.<ad>_obs_mode` in the confi
 
 | mode | `obs` | what the agent does |
 |---|---|---|
-| `rgb` (default) | each camera's Gaussian render: `rgb`, `semantic`, `depth` | drives from the images, as UniAD, VAD and NAVSIM do |
+| `rgb` (default) | each camera's Gaussian render: `rgb`, `semantic`, `depth`, or those `obs_channels` selects | drives from the images, as UniAD, VAD and NAVSIM do |
 | `vector` | `{}` | reads `info['scene_export']` as it is |
 | `raster` | `{}` | draws `info['scene_export']` with its own renderer, as `info['raster']` asks, and drives from that |
+
+In `rgb`, `base.<ad>_obs_channels` or `--obs_channels` picks the images among `rgb`, `semantic` and
+`depth`; one left out is neither computed from the render nor copied back from the GPU. The agents
+under `agents/` read `rgb` alone and get only that; any other AD side gets all three unless it
+declares less.
 
 `vector` and `raster` hand over the same geometry, `info['scene_export']`: `roads` (road
 segments), `cuboids` (the actors, the scenario's and the reconstruction's parked cars),

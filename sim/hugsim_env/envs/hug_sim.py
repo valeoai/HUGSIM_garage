@@ -26,7 +26,6 @@ import math
 from gaussian_renderer import GaussianModel
 from scene.obj_model import ObjModel
 from gaussian_renderer import render
-import open3d as o3d
 
 
 # Cityscapes ids in the scene models' semantic head. 0 road is the carriageway; 1 sidewalk
@@ -46,6 +45,9 @@ SCENE_EXPORT_KERB_CLASSES = (1, 9)
 # both; the mode is the contract, so an agent built for one can refuse the other instead of
 # driving from an input it was not trained on.
 OBS_MODES = ('rgb', 'vector', 'raster')
+# The images the rgb mode can hand over. base.obs_channels picks among them (all three by default):
+# a channel left out is neither computed from the render nor copied back from the GPU.
+OBS_CHANNELS = ('rgb', 'semantic', 'depth')
 # 'pv': perspective, one image per camera. 'bev': top-down, around the ego.
 RASTER_VIEWS = ('pv', 'bev')
 # 'agent': the agent's own rig, the one it was trained on. 'hugsim': the scenario's cameras, as
@@ -106,6 +108,10 @@ class HUGSimEnv(gymnasium.Env):
         self.raster = None
         if self.obs_mode == 'raster':
             self.raster = resolve_raster(cfg.base.get('raster'))
+        channels = cfg.base.get('obs_channels', OBS_CHANNELS)
+        self.obs_channels = (channels,) if isinstance(channels, str) else tuple(channels)  # 'rgb' is ('rgb',)
+        if not self.obs_channels or not set(self.obs_channels) <= set(OBS_CHANNELS):
+            raise ValueError(f"base.obs_channels is {list(self.obs_channels)}; expected a non-empty subset of {OBS_CHANNELS}")
 
         plan_list = cfg.scenario.plan_list
         for control_param in plan_list:
@@ -159,6 +165,7 @@ class HUGSimEnv(gymnasium.Env):
         # env, for closed_loop.py to crop to the part of them an episode's scorers can reach.
         ground_pts, scene_pts = ground_xyz.astype(float), scene_xyz.astype(float)
         if cfg.base['write_point_clouds']:
+            import open3d as o3d  # imported here: loading it costs ~5 s of an episode's start-up
             self.ground_xyz = self.scene_xyz = None
             ground_pcd = o3d.geometry.PointCloud()
             ground_pcd.points = o3d.utility.Vector3dVector(ground_pts)
@@ -188,7 +195,7 @@ class HUGSimEnv(gymnasium.Env):
         )
         # An abstract mode renders no camera, so its observation is empty and the agent reads info.
         self.observation_space = spaces.Dict({}) if self.obs_mode != 'rgb' else spaces.Dict(
-            {
+            {k: v for k, v in {
                 'rgb': spaces.Dict({
                     cam_name: spaces.Box(
                         low=0, high=255, 
@@ -207,7 +214,7 @@ class HUGSimEnv(gymnasium.Env):
                         shape=(params['intrinsic']['H'], params['intrinsic']['W']), dtype=np.float32
                     ) for cam_name, params in self.cam_params.items()
                 }),
-            }
+            }.items() if k in self.obs_channels}
         )
         self.fric = self.kinematic['fric']
 
@@ -484,9 +491,9 @@ class HUGSimEnv(gymnasium.Env):
     def _get_obs(self):
         if self.obs_mode != 'rgb':
             return {}
-        return self.render_cameras()
+        return self.render_cameras(channels=self.obs_channels)
 
-    def render_cameras(self, cam_names=None):
+    def render_cameras(self, cam_names=None, channels=OBS_CHANNELS):
         """The Gaussian render of the cameras at the current pose: RGB, semantic and depth.
 
         The rgb mode's observation. The abstract modes do not render per step, so this is also
@@ -494,13 +501,14 @@ class HUGSimEnv(gymnasium.Env):
 
         Args:
             cam_names: the cameras to render, all of them by default.
+            channels: the images to compute and copy back, a subset of OBS_CHANNELS.
 
         Returns:
             ``{'rgb': {cam: (H, W, 3) uint8}, 'semantic': {cam: (H, W) uint8},
-            'depth': {cam: (H, W) float32}}``. On waymo and kitti360 the BACK cameras come back
-            as zeros, in all three.
+            'depth': {cam: (H, W) float32}}``, restricted to ``channels``. On waymo and kitti360
+            the BACK cameras come back as zeros, in every channel.
         """
-        rgbs, semantics, depths = {}, {}, {}
+        out = {k: {} for k in channels}
         v2front = self.cam_params['CAM_FRONT']["v2c"]
         for cam_name in (self.cam_params if cam_names is None else cam_names):
             params = self.cam_params[cam_name]
@@ -510,23 +518,18 @@ class HUGSimEnv(gymnasium.Env):
             viewpoint = create_cam(intrinsic, c2w)
             with torch.no_grad():
                 render_pkg = self.render_fn(viewpoint=viewpoint, prev_viewpoint=None, **self.render_kwargs)
-            rgb = (torch.permute(render_pkg['render'].clamp(0, 1), (1,2,0)).detach().cpu().numpy() * 255).astype(np.uint8)
-            smt = torch.argmax(render_pkg['feats'], dim=0).detach().cpu().numpy().astype(np.uint8)
-            depth = render_pkg['depth'][0].detach().cpu().numpy()
-            if (self.data_type == 'waymo' or self.data_type == 'kitti360') and 'BACK' in cam_name:
-                rgbs[cam_name] = np.zeros_like(rgb)
-                semantics[cam_name] = np.zeros_like(smt)
-                depths[cam_name] = np.zeros_like(depth)
-            else:
-                rgbs[cam_name] = rgb
-                semantics[cam_name] = smt
-                depths[cam_name] = depth
+            images = {}
+            if 'rgb' in channels:
+                images['rgb'] = (torch.permute(render_pkg['render'].clamp(0, 1), (1,2,0)).detach().cpu().numpy() * 255).astype(np.uint8)
+            if 'semantic' in channels:
+                images['semantic'] = torch.argmax(render_pkg['feats'], dim=0).detach().cpu().numpy().astype(np.uint8)
+            if 'depth' in channels:
+                images['depth'] = render_pkg['depth'][0].detach().cpu().numpy()
+            blank = (self.data_type == 'waymo' or self.data_type == 'kitti360') and 'BACK' in cam_name
+            for k, img in images.items():
+                out[k][cam_name] = np.zeros_like(img) if blank else img
 
-        return {
-                'rgb': rgbs, 
-                'semantic': semantics,
-                'depth': depths,
-                }
+        return out
     
     def _get_info(self):
         wego_r, wego_t = pose2rt(self.ego)

@@ -9,7 +9,7 @@ sys.path.append(os.getcwd())
 
 import gymnasium
 import hugsim_env
-from hugsim_env.envs.hug_sim import OBS_MODES, RASTER_RIGS, RASTER_VIEWS, resolve_raster
+from hugsim_env.envs.hug_sim import OBS_CHANNELS, OBS_MODES, RASTER_RIGS, RASTER_VIEWS, resolve_raster
 from argparse import ArgumentParser
 from sim.utils.sim_utils import traj2control, traj_transform_to_global
 from sim.ilqr.lqr import set_max_solve_time
@@ -18,12 +18,10 @@ import json
 import pickle
 from sim.utils.launch_ad import launch, check_alive, kill
 from omegaconf import OmegaConf
-import open3d as o3d
 from sim.utils.score_calculator import hugsim_evaluate
 from sim.utils.realized_score import read_crash_marker, score_episode
 from sim.utils.score_corridor import crop_episode
 import numpy as np
-from moviepy import ImageSequenceClip
 
 # Time spacing of the waypoints the AD side returns. The tracker needs it to place the plan on a
 # timeline, and the scorer needs it to differentiate the plan into speeds/accelerations.
@@ -35,6 +33,7 @@ EPISODE_SECONDS = 100.0
 SPARSE_VIDEO_HZ = 2.0
 
 def to_video(observations, output_path, fps):
+    from moviepy import ImageSequenceClip  # only an episode with a video needs it
     frames = []
     for obs in observations:
         row1 = np.concatenate([obs['CAM_FRONT_LEFT'], obs['CAM_FRONT'], obs['CAM_FRONT_RIGHT']], axis=1)
@@ -144,9 +143,15 @@ class InProcessAgent:
 
 
 def write_cloud(path, xyz):
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(np.asarray(xyz, dtype=float))
-    o3d.io.write_point_cloud(path, pcd)
+    """A binary PLY of float64 x, y, z, the file open3d writes for a cloud without colours, written
+    with plyfile: importing open3d costs ~5 s of an episode's start-up."""
+    from plyfile import PlyData, PlyElement
+    xyz = np.asarray(xyz, dtype=np.float64).reshape(-1, 3)
+    if not len(xyz):
+        return  # as open3d did: no file for an empty cloud (the scorers then read it as empty)
+    vertex = np.empty(len(xyz), dtype=[('x', '<f8'), ('y', '<f8'), ('z', '<f8')])
+    vertex['x'], vertex['y'], vertex['z'] = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    PlyData([PlyElement.describe(vertex, 'vertex')], byte_order='<').write(path)
 
 
 def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full',
@@ -170,10 +175,11 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         if obs is None or info is None:
             obs, info = env.reset()
         if video != 'off' and cnt % stride == 0:
-            # The rgb mode has just rendered the cameras for the agent; the abstract modes
-            # render nothing per step, so a frame there is rendered for the video alone.
+            # The rgb mode has usually just rendered the color images for the agent; the abstract
+            # modes render nothing per step, and base.obs_channels may leave color out, so a frame
+            # is then rendered for the video alone.
             observations_save.append(
-                obs['rgb'] if cfg.base.obs_mode == 'rgb' else env.unwrapped.render_cameras()['rgb']
+                obs['rgb'] if 'rgb' in obs else env.unwrapped.render_cameras(channels=('rgb',))['rgb']
             )
         infos_save.append(info)
 
@@ -290,6 +296,7 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         # and the realized score below is still written.
         try:
             if clouds is None:
+                import open3d as o3d
                 ground_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'ground.ply')).points)
                 scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
             else:
@@ -385,6 +392,11 @@ if __name__ == "__main__":
         help="What the agent is handed: 'rgb', the Gaussian render; 'vector', the scene as "
              "geometry, to read as is; 'raster', the same geometry, for the agent to draw with its "
              "own renderer. Overrides base.<ad>_obs_mode; rgb when neither is set.")
+    parser.add_argument(
+        '--obs_channels', nargs='+', default=None, choices=OBS_CHANNELS,
+        help="rgb mode: the images handed to the agent each step, among rgb, semantic and depth. "
+             "Overrides base.<ad>_obs_channels; rgb alone for the agents under agents/, which read "
+             "nothing else, and all three otherwise.")
     parser.add_argument(
         '--raster_view', default=None, choices=RASTER_VIEWS,
         help="Raster mode: the view the agent is asked to draw, perspective or top-down. "
@@ -538,6 +550,12 @@ if __name__ == "__main__":
         raise SystemExit(
             f"--ad {args.ad} runs from agents/, which reads its weights from HUGSIM_AGENT_CKPTS: "
             "set it to the checkpoint root (agents/README.md, Checkpoints)")
+    # The images an rgb-mode agent is handed. The agents under agents/ all read RGB alone, so they
+    # get only that, and the semantic and depth images are neither computed nor copied back from
+    # the GPU. Any other AD side gets all three unless it declares less (base.<ad>_obs_channels).
+    channels = (args.obs_channels or cfg.base.get(f'{args.ad}_obs_channels')
+                or (['rgb'] if launcher_in_repo else OBS_CHANNELS))
+    cfg.base.obs_channels = [channels] if isinstance(channels, str) else list(channels)  # 'rgb' is ['rgb']
 
     if args.in_process:
         try:

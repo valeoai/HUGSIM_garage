@@ -10,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import argparse
 import os
-import open3d as o3d
 import torch
 from scipy.spatial.transform import Rotation as SCR
 from scipy.spatial import cKDTree
@@ -621,6 +620,7 @@ def calculate(data):
     return score_dict
 
 def parse_data(test_path):
+    import open3d as o3d  # imported here: loading it costs ~5 s of an episode's start-up
     data_file_name = os.path.join(test_path, "data.pkl")
     ground_pcd_file_name = os.path.join(test_path, "ground.ply")
     scene_pcd_file_name = os.path.join(test_path, "scene.ply")
