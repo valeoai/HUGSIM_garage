@@ -10,7 +10,8 @@ bring an environment of their own.
 | `uniad` | UniAD (base, e2e) | `uniad/` | `_mmdet3d/pixi.toml` | no |
 | `vad` | VAD (base) | `vad/` | `_mmdet3d/pixi.toml` | no |
 | `ltf` | Latent TransFuser | `ltf/` | the simulator's | yes |
-| `drivor` | [DrivoR](https://github.com/valeoai/DrivoR) (4 cameras), as its paper evaluated it on HUGSIM | `drivor/` | the simulator's | yes |
+| `drivor` | [DrivoR](https://github.com/valeoai/DrivoR) (4 cameras), with its default scorer weights | `drivor/` | the simulator's | yes |
+| `drivor_paper` | DrivoR as its paper evaluated it on HUGSIM | `drivor_paper/` | the simulator's | yes |
 | `toad` | [TOAD](https://github.com/valeoai/TOAD): DrivoR with CEM refinement, as the HUGSIM client ran it | `toad/` | the simulator's | yes |
 | `toad_release` | TOAD with the CEM settings of its released code | `toad_release/` | the simulator's | yes |
 | `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `gtrs/` | the simulator's | yes |
@@ -25,15 +26,18 @@ pytorch_lightning), not for anything they compute; their folders hold their infe
 Every agent is a folder named like its `--ad` name and like its checkpoint folder
 `$HUGSIM_AGENT_CKPTS/<name>/`, with a `launch.sh` and a `NOTICE.md` (where each file came from). The code
 the NAVSIM-family agents share is in `_navsim/` (`NOTICE.md` there too; each agent's `spec.py` is what
-distinguishes it), the DrivoR model that `drivor`, `toad` and `toad_release` all build in `_drivor/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
+distinguishes it), the DrivoR model that `drivor`, `drivor_paper`, `toad` and `toad_release` all build in `_drivor/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
 imports another, so deleting one leaves the rest working (`_navsim/LICENSE` is the Apache-2.0 text of the
 NAVSIM-family code).
 
-`drivor`, `toad` and `toad_release` run the same model and checkpoint, and differ only in their settings:
+`drivor`, `drivor_paper`, `toad` and `toad_release` run the same model and checkpoint, and differ only in their settings:
 
-* **`drivor`** is DrivoR as the DrivoR paper (arXiv 2601.05083v2, Table 2) evaluated it on HUGSIM: the
-  PDMS scorer weights (NC 1, DAC 1, DDC 0, TTC 5, EP 5, comfort 2) and no CEM refinement, as
-  `dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml` in our NAVSIM checkout ran it.
+* **`drivor`** is DrivoR with the official implementation's default scorer weights (NC 1, DAC 1,
+  DDC 0, TTC 5, EP 5, comfort 2), the ones TOAD uses too, and no CEM refinement.
+* **`drivor_paper`** is DrivoR as the DrivoR paper (arXiv 2601.05083v2, Table 2) evaluated it on
+  HUGSIM: the scorer weights of that run (NC 1, DAC 1.6, DDC 0, TTC 8.1, EP 11.2, comfort 2, logged
+  in each of its episodes, November 2025) and no CEM refinement. `dynamo_v6_agent_new_scorer_v3_eval_nav3.yaml`
+  in our NAVSIM checkout keeps these weights commented out since January 2026.
 * **`toad`** is what our `dynamo_e2e.sh` HUGSIM client launches (`CONFIG_NAME = "drivor"`, not Dynamo):
   DrivoR with CEM refinement of the scorer's best proposal and the PDMS weights, which is TOAD.
   It is what `drivor` ran before the two were separated (results of that time: README.md,
@@ -90,7 +94,7 @@ Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
 | `vad/VAD_base.pth` | VAD-Base from [hustvl/VAD](https://github.com/hustvl/VAD)'s README |
 | `ltf/ltf_seed_0.ckpt` | [autonomousvision/navsim_baselines, `ltf/`](https://huggingface.co/autonomousvision/navsim_baselines/tree/main/ltf) |
 | `drivor/drivor_Nav1_25epochs.pth` | [valeoai/DrivoR's `model_weights` release](https://github.com/valeoai/DrivoR/releases/download/model_weights/drivor_Nav1_25epochs.pth) (the NAVSIM-v1 model; sha256 `e1a678f2…`). `ckpts/final/nav3.ckpt` of our NAVSIM checkout, which our `dynamo_e2e.py` loaded, holds the same 467 tensors in another container, but the agents read only the released file: a checkpoint root with only `nav3.ckpt` needs it downloaded |
-| `toad/drivor_Nav1_25epochs.pth`, `toad_release/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a copy or a symlink to it) |
+| `drivor_paper/drivor_Nav1_25epochs.pth`, `toad/drivor_Nav1_25epochs.pth`, `toad_release/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a copy or a symlink to it) |
 | `gtrs/gtrs_dense_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_dense_vov.ckpt) |
 | `gtrs/16384.npy` | the trajectory vocabulary, `traj_final/16384.npy` in [NVlabs/GTRS](https://github.com/NVlabs/GTRS) |
 | `ztrs/ztrs_vov.ckpt` | [Zzxxxxxxxx/ZTRS](https://huggingface.co/Zzxxxxxxxx/ZTRS/blob/main/ztrs_vov.ckpt) |
