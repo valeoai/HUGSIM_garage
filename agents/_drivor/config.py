@@ -1,4 +1,5 @@
-"""DrivoR config, with the values the HUGSIM ``dynamo_e2e.py`` client ran with: TOAD's.
+"""DrivoR config, with the values the HUGSIM ``dynamo_e2e.py`` client ran with, except the two CEM
+settings, which are those of TOAD's released code (valeoai/TOAD at cfa88e0, ``drivor_cem_portable/``).
 
 ``agents/toad`` uses these defaults; ``agents/drivor`` turns CEM off, and ``agents/drivor_paper``
 also sets the scorer weights of the DrivoR paper's HUGSIM run (see their ``spec.py``).
@@ -77,13 +78,13 @@ class DrivoRConfig:
     cem_num_samples: int = 64
     cem_num_iterations: int = 5
     cem_dt: float = 0.5
-    cem_alpha: float = 0.7
+    cem_alpha: float = 1.0  # no smoothing of the distribution update, as released (the client used 0.7)
     cem_std_floor_a: float = 0.1
     cem_std_floor_omega: float = 0.025
     cem_comfort_weight: float = 0.05
     cem_anchor_weight: float = 0.5
     cem_init_std_scale: float = 0.5
-    cem_control_margin: float = 5.0  # sampled controls are clamped at this times the kinematic limits
+    cem_control_margin: float = 1.5  # sampled controls are clamped at this times the kinematic limits (client: 5.0)
 
     image_size: Tuple[int, int] = (1148, 672)
     image_backbone: ImageBackboneConfig = field(default_factory=ImageBackboneConfig)

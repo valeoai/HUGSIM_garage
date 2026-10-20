@@ -1,4 +1,4 @@
-"""DrivoR agent, shared by ``drivor``, ``drivor_paper``, ``toad`` and ``toad_release``: checkpoint loading and inference.
+"""DrivoR agent, shared by ``drivor``, ``drivor_paper`` and ``toad``: checkpoint loading and inference.
 
 From valeoai/DrivoR ``navsim/agents/drivoR/drivor_agent.py`` and NAVSIM's
 ``navsim/agents/abstract_agent.py`` (``compute_trajectory``), as in our NAVSIM checkout. The training
@@ -18,7 +18,7 @@ class DrivoRAgent(torch.nn.Module):
     def __init__(self, config: DrivoRConfig, name: str = 'drivor'):
         super().__init__()
         self._config = config
-        self._name = name  # the --ad name, for messages: drivor, drivor_paper, toad or toad_release
+        self._name = name  # the --ad name, for messages: drivor, drivor_paper or toad
         self._drivor_model = DrivoRModel(config)
         self._feature_builder = DrivoRFeatureBuilder(config)
 

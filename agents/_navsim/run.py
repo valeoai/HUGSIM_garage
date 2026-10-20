@@ -1,6 +1,6 @@
 """Serve a NAVSIM-family agent to HUGSIM over the episode FIFOs.
 
-    python -m agents._navsim.run --agent {ltf,drivor,drivor_paper,toad,toad_release,gtrs,ztrs,gtrs_aug} --output <episode_dir> \
+    python -m agents._navsim.run --agent {ltf,drivor,drivor_paper,toad,gtrs,ztrs,gtrs_aug} --output <episode_dir> \
         [--device cuda|cpu] [--ckpt-root DIR]
 
 Run it from the repository root (the launchers ``agents/<agent>/launch.sh`` do). Checkpoints are

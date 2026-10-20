@@ -109,12 +109,12 @@ launching removes an earlier run's `eval.json` and `video.mp4` from the episode 
 neither outlives a run that does not write it (an agent's refusal or `--skip-native-eval` writes
 no `eval.json`, `--video off` no `video.mp4`).
 
-The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `drivor_paper`, `toad`, `toad_release`, `gtrs`, `ztrs` and `gtrs_aug`, whose
+The shipped configs name `uniad`, `vad`, `ltf`, `drivor`, `drivor_paper`, `toad`, `gtrs`, `ztrs` and `gtrs_aug`, whose
 launchers are in [`agents/`](agents/README.md) (`base.<ad>_path` is
 `${oc.env:HUGSIM_AD_<NAME>,agents/...}`, so an exported variable still replaces one), and
 `dynamo` and `pictura`, which live in unrelated checkouts and read their variable alone.
 
-The agents that run in this environment (`ltf`, `drivor`, `drivor_paper`, `toad`, `toad_release`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
+The agents that run in this environment (`ltf`, `drivor`, `drivor_paper`, `toad`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
 `agents/registry.py`) can be called in the simulator's process instead, with `--in_process`: no
 launcher, no pipes, and a step of LTF about 1.5 times faster. See
 [agents/README.md](agents/README.md#in-process).
@@ -308,7 +308,9 @@ done
 find . -type l -lname '*_drivor*' | while read -r l; do t=$(readlink "$l"); ln -sfn "${t/_drivor/_toad}" "$l"; done
 ```
 
-then aggregate them as `toad`. The 2026-10 baseline campaign is already renamed.
+then aggregate them as `toad`. The 2026-10 baseline campaign is already renamed. These episodes, and any
+`toad` episode run before `toad` took TOAD's released CEM settings (October 2026), are TOAD with our
+HUGSIM client's CEM settings (`cem_alpha` 0.7, a 5.0 clamp); do not mix them with later `toad` results.
 
 ## Environment
 
@@ -468,7 +470,7 @@ python closed_loop.py --scenario_path ./configs/benchmark/${dataset_name}/${scen
             --base_path ./configs/sim/${dataset_name}_base.yaml \
             --camera_path ./configs/sim/${dataset_name}_camera.yaml \
             --kinematic_path ./configs/sim/kinematic.yaml \
-            --ad ${method_name: [uniad, vad, ltf, drivor, drivor_paper, toad, toad_release, gtrs, ztrs, gtrs_aug]} \
+            --ad ${method_name: [uniad, vad, ltf, drivor, drivor_paper, toad, gtrs, ztrs, gtrs_aug]} \
             --ad_cuda ${ad_cuda}
 ```
 
