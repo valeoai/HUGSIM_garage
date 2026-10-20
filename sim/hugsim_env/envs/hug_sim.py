@@ -108,7 +108,8 @@ class HUGSimEnv(gymnasium.Env):
         self.raster = None
         if self.obs_mode == 'raster':
             self.raster = resolve_raster(cfg.base.get('raster'))
-        self.obs_channels = tuple(cfg.base.get('obs_channels', OBS_CHANNELS))
+        channels = cfg.base.get('obs_channels', OBS_CHANNELS)
+        self.obs_channels = (channels,) if isinstance(channels, str) else tuple(channels)  # 'rgb' is ('rgb',)
         if not self.obs_channels or not set(self.obs_channels) <= set(OBS_CHANNELS):
             raise ValueError(f"base.obs_channels is {list(self.obs_channels)}; expected a non-empty subset of {OBS_CHANNELS}")
 

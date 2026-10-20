@@ -175,10 +175,11 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         if obs is None or info is None:
             obs, info = env.reset()
         if video != 'off' and cnt % stride == 0:
-            # The rgb mode has just rendered the cameras for the agent; the abstract modes
-            # render nothing per step, so a frame there is rendered for the video alone.
+            # The rgb mode has usually just rendered the color images for the agent; the abstract
+            # modes render nothing per step, and base.obs_channels may leave color out, so a frame
+            # is then rendered for the video alone.
             observations_save.append(
-                obs['rgb'] if cfg.base.obs_mode == 'rgb' else env.unwrapped.render_cameras(channels=('rgb',))['rgb']
+                obs['rgb'] if 'rgb' in obs else env.unwrapped.render_cameras(channels=('rgb',))['rgb']
             )
         infos_save.append(info)
 
@@ -552,8 +553,9 @@ if __name__ == "__main__":
     # The images an rgb-mode agent is handed. The agents under agents/ all read RGB alone, so they
     # get only that, and the semantic and depth images are neither computed nor copied back from
     # the GPU. Any other AD side gets all three unless it declares less (base.<ad>_obs_channels).
-    cfg.base.obs_channels = list(args.obs_channels or cfg.base.get(f'{args.ad}_obs_channels')
-                                 or (['rgb'] if launcher_in_repo else OBS_CHANNELS))
+    channels = (args.obs_channels or cfg.base.get(f'{args.ad}_obs_channels')
+                or (['rgb'] if launcher_in_repo else OBS_CHANNELS))
+    cfg.base.obs_channels = [channels] if isinstance(channels, str) else list(channels)  # 'rgb' is ['rgb']
 
     if args.in_process:
         try:
