@@ -9,7 +9,6 @@ from utils.sh_utils import RGB2SH, SH2RGB
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-import open3d as o3d
 import math
 from utils.graphics_utils import BasicPointCloud
 from utils.sh_utils import RGB2SH
@@ -182,6 +181,7 @@ class GroundModel:
         PlyData([el]).write(path)
 
     def save_vis_ply(self, path):
+        import open3d as o3d  # imported here: loading it costs ~5 s of an episode's start-up
         mkdir_p(os.path.dirname(path))
         xyz = self.get_xyz.detach().cpu().numpy()
         pcd = o3d.geometry.PointCloud()

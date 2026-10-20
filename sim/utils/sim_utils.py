@@ -46,8 +46,9 @@ def create_cam(intrinsic, c2w):
     K = np.eye(4)
     K[0, 0], K[1, 1] = fov2focal(fovx, w), fov2focal(fovy, h)
     K[0, 2], K[1, 2] = intrinsic['cx'], intrinsic['cy']
-    cam = Camera(K=K, c2w=c2w, width=w, height=h,
-                image=np.zeros((h, w, 3)), image_name='')
+    # No image: the renderer reads width and height only, and building a full-size zero image per
+    # camera per step (then copying it to the GPU) was a quarter of a step's time.
+    cam = Camera(K=K, c2w=c2w, width=w, height=h, image=None, image_name='')
     return cam
 
 def traj2control(plan_traj, info, plan_dt=0.5, sim_dt=None):

@@ -1,7 +1,6 @@
 import math
 import random
 import numpy as np
-from trajdata.maps import VectorMap
 from submodules.Pplan.Sampling.spline_planner import SplinePlanner
 import torch
 import time

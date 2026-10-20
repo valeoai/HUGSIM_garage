@@ -6,9 +6,6 @@ from collections import namedtuple
 from sim.utils.agent_controller import constant_headaway
 from sim.utils import agent_controller
 from collections import defaultdict
-from trajdata import AgentType, UnifiedDataset
-from trajdata.maps import MapAPI
-from trajdata.simulation import SimulationScene
 from sim.utils.sim_utils import rt2pose, pose2rt
 from sim.utils.agent_controller import IDM, AttackPlanner, ConstantPlanner, UnicyclePlanner
 import os
@@ -173,6 +170,10 @@ class planner:
 
 class UnifiedMap:
     def __init__(self, datapath, version, scene_name):
+        # trajdata is imported here: only scenarios with load_HD_map need it, and loading it
+        # costs seconds of every episode's start-up.
+        from trajdata import AgentType, UnifiedDataset
+        from trajdata.maps import MapAPI
         self.datapath = datapath
         self.version = version
 
@@ -207,6 +208,7 @@ class UnifiedMap:
         self.PATH_LENGTH = 100
 
     def get_start_pose(self):
+        from trajdata.simulation import SimulationScene
         sim_scene: SimulationScene = SimulationScene(
             env_name=self.version,
             scene_name=f"sim_scene",

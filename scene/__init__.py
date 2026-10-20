@@ -7,7 +7,6 @@ from scene.gaussian_model import GaussianModel
 from scene.obj_model import ObjModel
 from scene.cameras import cameraList_from_camInfos
 import torch
-import open3d as o3d
 import numpy as np
 import shutil
 
@@ -34,6 +33,7 @@ class Scene:
         """b
         :param path: Path to colmap scene main folder.
         """
+        import open3d as o3d  # imported here: loading it costs ~5 s of an episode's start-up
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians

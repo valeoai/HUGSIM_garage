@@ -23,7 +23,10 @@ class Camera(nn.Module):
         self.c2w = torch.from_numpy(c2w).float().cuda()
         self.dynamics = dynamics
 
-        self.original_image = torch.from_numpy(image).permute(2,0,1).float().clamp(0.0, 1.0).to(self.data_device)
+        # image=None: a viewpoint to render from, with no image of its own (the simulator's cameras);
+        # the renderer reads only width and height.
+        self.original_image = None if image is None else \
+            torch.from_numpy(image).permute(2,0,1).float().clamp(0.0, 1.0).to(self.data_device)
         if semantic2d is not None:
             self.semantic2d = semantic2d.to(self.data_device)
         else:
@@ -36,8 +39,8 @@ class Camera(nn.Module):
             self.mask = torch.from_numpy(mask).bool().to(self.data_device)
         else:
             self.mask = None
-        self.image_width = self.original_image.shape[2]
-        self.image_height = self.original_image.shape[1]
+        self.image_width = width if image is None else self.original_image.shape[2]
+        self.image_height = height if image is None else self.original_image.shape[1]
         if optical_image is not None:
             self.optical_gt = torch.from_numpy(optical_image).to(self.data_device)
         else:
