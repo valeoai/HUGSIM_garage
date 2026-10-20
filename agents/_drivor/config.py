@@ -1,7 +1,7 @@
 """DrivoR config, with the values the HUGSIM ``dynamo_e2e.py`` client ran with: TOAD's.
 
-``agents/toad`` uses these defaults; ``agents/drivor`` turns CEM off, as the DrivoR paper's HUGSIM
-evaluation ran it (see its ``spec.py``).
+``agents/toad`` uses these defaults; ``agents/drivor`` turns CEM off, and ``agents/drivor_paper``
+also sets the scorer weights of the DrivoR paper's HUGSIM run (see their ``spec.py``).
 
 The values are those hydra resolved from ``config/common/agent/drivoR.yaml`` in our NAVSIM checkout
 (valeoai/DrivoR) for ``agent.config``. Training-only keys, the LiDAR branch (``lidar_pc: []`` in the
