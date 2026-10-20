@@ -226,6 +226,13 @@ Two scores, for two questions:
 | `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written at the end of every episode unless `--skip-native-eval` is passed or HUGSIM's scorer fails on it (`get_score.py` averages them) |
 | the realized score, TerraTransfer's closed-loop HD-Score ([arXiv 2606.17386](https://arxiv.org/abs/2606.17386), App. B) | the **realized** trajectory: per 0.5 s keyframe NC and DAC at the ego's pose, TTC propagated 1 s ahead, comfort over the next 1 s | `realized_score.json` with `--realized_score`, or `score_realized.py` for past runs |
 
+`--before_fixes` drives and scores as HUGSIM did for published results such as the DrivoR paper's:
+#56 and #57 applied, none of this fork's later fixes that change a score. The tracker optimizes each
+command for the plan's 0.5 s spacing instead of the simulator's step, and `eval.json` judges each
+plan from the pose one step after it was made (the frames kept as `frames_before_fixes` in
+`data.pkl`), with the collision box from before #76. Use it to compare with those numbers; keep its
+episodes apart from others (`realized_score.json` records `"before_fixes": true`).
+
 `hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
 comparable with TerraTransfer, and with any agent that, like its jerk policy, has no
 multi-second plan to score. It reads only what an episode already saves, so every past run can

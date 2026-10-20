@@ -26,6 +26,10 @@ FAST_SCORING = True
 # box extends from there down to the road, over the heights HUGSimEnv's own collision check covers.
 ego_verts_canonic = np.array([[0.5, 0.5, -1.0], [0.5, -0.5, -1.0], [0.5, 0.5, 0], [0.5, -0.5, 0],
                     [-0.5, -0.5, -1.0], [-0.5, 0.5, -1.0], [-0.5, -0.5, 0], [-0.5, 0.5, 0]])
+# The box before #76: from the camera plane up, over the 1.5 m above the car (above it, not around
+# it). closed_loop.py --before_fixes scores with it, as the HUGSIM results of that time were.
+EGO_VERTS_BEFORE_FIXES = np.array([[0.5, 0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 1.0], [0.5, -0.5, 1.0],
+                                   [-0.5, -0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, 1.0], [-0.5, 0.5, 1.0]])
 
 # Define boundaries
 boundaries = {
@@ -644,7 +648,16 @@ def parse_data(test_path):
     return data
 
 
-def hugsim_evaluate(test_data, ground_xyz, scene_xyz, new_score_weight=None):
+def hugsim_evaluate(test_data, ground_xyz, scene_xyz, new_score_weight=None, ego_verts=None):
+    """``ego_verts``: the ego's canonical box for this call (EGO_VERTS_BEFORE_FIXES, say), else
+    ego_verts_canonic."""
+    if ego_verts is not None:
+        global ego_verts_canonic
+        saved, ego_verts_canonic = ego_verts_canonic, np.asarray(ego_verts, dtype=float)
+        try:
+            return hugsim_evaluate(test_data, ground_xyz, scene_xyz, new_score_weight)
+        finally:
+            ego_verts_canonic = saved
     if new_score_weight is not None:
         global score_weight
         score_weight = new_score_weight

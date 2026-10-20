@@ -18,7 +18,7 @@ import json
 import pickle
 from sim.utils.launch_ad import launch, check_alive, kill
 from omegaconf import OmegaConf
-from sim.utils.score_calculator import hugsim_evaluate
+from sim.utils.score_calculator import EGO_VERTS_BEFORE_FIXES, hugsim_evaluate
 from sim.utils.realized_score import read_crash_marker, score_episode
 from sim.utils.score_corridor import crop_episode
 import numpy as np
@@ -155,7 +155,7 @@ def write_cloud(path, xyz):
 
 
 def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full',
-                   agent_name=None):
+                   agent_name=None, before_fixes=False):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -165,6 +165,8 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
     ad_crashed = False
     cnt = 0
     save_data = {'type': 'closeloop', 'frames': []}
+    if before_fixes:
+        save_data['frames_before_fixes'] = []
 
     print('Ready for simulation')
 
@@ -232,6 +234,10 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                     'velo': override['velo'],
                     'steer': override['steer'],
                 }
+            elif before_fixes:
+                # As before the controller-step fix: the tracker at the plan's own 0.5 s spacing.
+                acc, steer_rate = traj2control(plan_traj, info)
+                action = {'acc': acc, 'steer_rate': steer_rate}
             else:
                 acc, steer_rate = traj2control(
                     plan_traj, info, plan_dt=PLAN_TIMESTEP, sim_dt=cfg.kinematic.dt
@@ -252,6 +258,23 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
             frame['collision'] = info['collision']
             frame['rc'] = info['rc']
             save_data['frames'].append(frame)
+            if before_fixes:
+                # The frame HUGSIM's scorer judged before the fixes: the loop built it after
+                # env.step(), so the plan was anchored at the pose the step reached, with that
+                # step's vehicles and time.
+                save_data['frames_before_fixes'].append({
+                    'time_stamp': info['timestamp'],
+                    'is_key_frame': True,
+                    'ego_box': info['ego_box'],
+                    'obj_boxes': info['obj_boxes'],
+                    'obj_names': ['car' for _ in info['obj_boxes']],
+                    'planned_traj': {
+                        'traj': traj_transform_to_global(imu_plan_traj, info['ego_box']),
+                        'timestep': PLAN_TIMESTEP
+                    },
+                    'collision': info['collision'],
+                    'rc': info['rc'],
+                })
 
         else:  # AD Side Crushed
             done = True
@@ -276,7 +299,8 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
     clouds = None
     if outputs == 'scoring' and save_data['frames']:
         try:
-            clouds = crop_episode(save_data['frames'], env.unwrapped.ground_xyz, env.unwrapped.scene_xyz)
+            clouds = crop_episode(save_data['frames'] + save_data.get('frames_before_fixes', []),
+                                  env.unwrapped.ground_xyz, env.unwrapped.scene_xyz)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -301,7 +325,13 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                 scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
             else:
                 ground_xyz, scene_xyz = clouds
-            results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
+            if before_fixes:
+                # HUGSIM's score as the DrivoR paper's results computed it: the frames above, and
+                # the collision box from before #76.
+                results = hugsim_evaluate([{**save_data, 'frames': save_data['frames_before_fixes']}],
+                                          ground_xyz, scene_xyz, ego_verts=EGO_VERTS_BEFORE_FIXES)
+            else:
+                results = hugsim_evaluate([save_data], ground_xyz, scene_xyz)
             with open(os.path.join(output, 'eval.json'), 'w') as f:
                 json.dump(results, f)
         except Exception:
@@ -324,6 +354,8 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         # Which --ad drove: a record is otherwise only labelled by its folder name, and the name
         # `drivor` meant TOAD before agents/toad existed (run_benchmark.py refuses those records).
         result["agent"] = agent_name
+        if before_fixes:
+            result["before_fixes"] = True  # eval.json is then HUGSIM's score before the fixes
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
@@ -422,6 +454,14 @@ if __name__ == "__main__":
         help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
              "still written, so the episode can be scored offline",
     )
+    parser.add_argument(
+        "--before_fixes", action="store_true",
+        help="drive and score as HUGSIM did for published results such as the DrivoR paper's (#56 "
+             "and #57 applied, none of this fork's later fixes that change a score): the iLQR "
+             "tracker optimizes each command for the plan's 0.5 s spacing instead of the "
+             "simulator's step, and HUGSIM's score (eval.json) judges each plan from the pose one "
+             "step after it was made, with the collision box from before #76. The score of the "
+             "path driven is unchanged; realized_score.json records before_fixes.")
     parser.add_argument(
         "--deterministic_tracker",
         action="store_true",
@@ -582,7 +622,8 @@ if __name__ == "__main__":
     if args.in_process:
         try:
             create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad)
+                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
+                           before_fixes=args.before_fixes)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -591,7 +632,8 @@ if __name__ == "__main__":
         try:
             create_gym_env(cfg, output, FifoAgent(output, process),
                            skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad)
+                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
+                           before_fixes=args.before_fixes)
             check_alive(process)
         except Exception:
             import traceback
