@@ -26,6 +26,10 @@ FAST_SCORING = True
 # box extends from there down to the road, over the heights HUGSimEnv's own collision check covers.
 ego_verts_canonic = np.array([[0.5, 0.5, -1.0], [0.5, -0.5, -1.0], [0.5, 0.5, 0], [0.5, -0.5, 0],
                     [-0.5, -0.5, -1.0], [-0.5, 0.5, -1.0], [-0.5, -0.5, 0], [-0.5, 0.5, 0]])
+# The box before #76: from the camera plane up, over the 1.5 m above the car (above it, not around
+# it). closed_loop.py --before_fixes scores with it, as the HUGSIM results of that time were.
+EGO_VERTS_BEFORE_FIXES = np.array([[0.5, 0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 1.0], [0.5, -0.5, 1.0],
+                                   [-0.5, -0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, 1.0], [-0.5, 0.5, 1.0]])
 
 # Define boundaries
 boundaries = {
@@ -639,12 +643,21 @@ def parse_data(test_path):
     scene_xyz = np.stack([scene_xyz[:, 2], -scene_xyz[:, 0], -scene_xyz[:, 1]], axis=1) 
     
     data[0]['ground_xy'] = ground_xy
-    data[0]['scene_xyz'] = torch.from_numpy(scene_xyz).cuda()
+    data[0]['scene_xyz'] = torch.from_numpy(scene_xyz).float().cuda()  # float32, as hugsim_evaluate passes it
     # data[0]['scene_xyz'] = scene_xyz
     return data
 
 
-def hugsim_evaluate(test_data, ground_xyz, scene_xyz, new_score_weight=None):
+def hugsim_evaluate(test_data, ground_xyz, scene_xyz, new_score_weight=None, ego_verts=None):
+    """``ego_verts``: the ego's canonical box for this call (EGO_VERTS_BEFORE_FIXES, say), else
+    ego_verts_canonic."""
+    if ego_verts is not None:
+        global ego_verts_canonic
+        saved, ego_verts_canonic = ego_verts_canonic, np.asarray(ego_verts, dtype=float)
+        try:
+            return hugsim_evaluate(test_data, ground_xyz, scene_xyz, new_score_weight)
+        finally:
+            ego_verts_canonic = saved
     if new_score_weight is not None:
         global score_weight
         score_weight = new_score_weight
@@ -665,6 +678,11 @@ def get_opts():
 if __name__ == "__main__":
     args = get_opts()
     data = parse_data(args.test_path)
-    
+    if 'frames_before_fixes' in data[0]:
+        # An episode run with closed_loop.py --before_fixes: score it as its eval.json was, its
+        # frames from before the fixes with the box from before #76.
+        data[0]['frames'] = data[0]['frames_before_fixes']
+        ego_verts_canonic = EGO_VERTS_BEFORE_FIXES
+
     # Call the main function with the loaded data
     calculate(data)
