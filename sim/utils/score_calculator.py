@@ -643,7 +643,7 @@ def parse_data(test_path):
     scene_xyz = np.stack([scene_xyz[:, 2], -scene_xyz[:, 0], -scene_xyz[:, 1]], axis=1) 
     
     data[0]['ground_xy'] = ground_xy
-    data[0]['scene_xyz'] = torch.from_numpy(scene_xyz).cuda()
+    data[0]['scene_xyz'] = torch.from_numpy(scene_xyz).float().cuda()  # float32, as hugsim_evaluate passes it
     # data[0]['scene_xyz'] = scene_xyz
     return data
 
@@ -678,6 +678,11 @@ def get_opts():
 if __name__ == "__main__":
     args = get_opts()
     data = parse_data(args.test_path)
-    
+    if 'frames_before_fixes' in data[0]:
+        # An episode run with closed_loop.py --before_fixes: score it as its eval.json was, its
+        # frames from before the fixes with the box from before #76.
+        data[0]['frames'] = data[0]['frames_before_fixes']
+        ego_verts_canonic = EGO_VERTS_BEFORE_FIXES
+
     # Call the main function with the loaded data
     calculate(data)

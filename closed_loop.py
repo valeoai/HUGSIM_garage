@@ -484,6 +484,10 @@ if __name__ == "__main__":
              "The agent uses this process's GPU; --ad_cuda and --ad_path do not apply",
     )
     args = parser.parse_args()
+    if args.before_fixes and args.skip_native_eval:
+        # Only the episode's own scoring judges frames_before_fixes with the old box; the offline
+        # scorers that --skip-native-eval leaves the score to are the fork's.
+        raise SystemExit("--before_fixes needs HUGSIM's own scorer: drop --skip-native-eval")
     if args.deterministic_tracker:
         set_max_solve_time(None)
     if args.in_process and args.ad_path is not None:
