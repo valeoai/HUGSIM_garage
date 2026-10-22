@@ -334,7 +334,7 @@ themselves); `closed_loop.py` checks only the ones a given run reads and reports
 | `HUGSIM_DATA` | the tree holding `HUGSIM/` (3DRealCar, scenes, the two benchmark sets), built by [`prepare_benchmark.py`](#benchmark-sets) |
 | `HUGSIM_OUT` | where episode folders are written (`$HUGSIM_OUT/<set>/<dataset>_<agent>/`), or pass `--output_dir`, which is used as given (no `<set>` folder; the agent name is appended to it) |
 | `HUGSIM_AD_<NAME>` | an agent's launcher, or pass `--ad_path`; needed only for agents not in `agents/` |
-| `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)) |
+| `HUGSIM_AGENT_CKPTS` | the weights of the agents in `agents/` ([layout](agents/README.md#checkpoints)); `python agents/download_checkpoints.py` fills it |
 | `NUSCENES_RAW` | raw nuScenes, read only by scenarios with `load_HD_map: true` |
 
 ---
@@ -469,7 +469,8 @@ Here is a video for the GUI usage demonstration: [GUI Video](https://github.com/
 and [NAVSIM](https://github.com/hyzhou404/NAVSIM). LTF, DrivoR, TOAD, GTRS, ZTRS and GTRS-Aug run in
 the pixi environment above; UniAD and VAD need the environment in `agents/_mmdet3d/` (one
 `pixi install` and two build tasks, [agents/_mmdet3d/README.md](agents/_mmdet3d/README.md)). All of
-them read their weights from `HUGSIM_AGENT_CKPTS`.
+them read their weights from `HUGSIM_AGENT_CKPTS`, which `python agents/download_checkpoints.py`
+fills (about 5.3 GB).
 
 In **closed_loop.py**, we automatically launch autonomous driving algorithms.
 
