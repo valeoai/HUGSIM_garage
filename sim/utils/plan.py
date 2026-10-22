@@ -94,6 +94,14 @@ class planner:
         return uv_world[1] + cam_height
 
     def plan_traj(self, t, ego_stats):
+        # A call at t = 0 is an env.reset(), and the episode loop resets twice (once at set-up, once
+        # at the top of its loop) without rebuilding the planner. The step-count trigger this clock
+        # replaced, (t // dt) % ATTACK_FREQ == 0, replanned at every t = 0, so each reset restarts
+        # the attacker clocks. Carried over instead, the second reset counted as 0.25 s: every
+        # attacker skipped that replan and replanned one step out of phase for the whole episode,
+        # 2-9 cm off the published runs after the first step.
+        if t == 0:
+            self._attack_elapsed.clear()
         all_stats = [ego_stats]
         for iid, stat in self.stats.items():
             all_stats.append(stat[[0, 1, 3, 4]])  # a, b, yaw, v
