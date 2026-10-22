@@ -83,7 +83,17 @@ output goes to the simulator's log rather than `output.txt`. Both ways give the 
 
 ## Checkpoints
 
-Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`, laid out as:
+Every agent reads its weights from `$HUGSIM_AGENT_CKPTS`. To fetch them:
+
+```bash
+python agents/download_checkpoints.py                        # all of them, about 5.3 GB
+python agents/download_checkpoints.py --agents drivor toad   # some of them
+python agents/download_checkpoints.py --verify               # also re-hash what is already there
+```
+
+It downloads only what is missing, over plain HTTPS, checks each file's sha256 (those of the files
+every garage run has used), and links the files agents share (DrivoR's weights for `drivor_paper` and
+`toad`, the GTRS vocabulary for ZTRS). An episode never downloads anything. The layout:
 
 | file | from |
 |---|---|
