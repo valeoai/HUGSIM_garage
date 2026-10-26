@@ -1,4 +1,4 @@
-# agents/_vavam: VaVAM and ECO
+# agents/_vavam: VaVAM (and ECO, in agents/_eco)
 
 Shared by `vavam` and `vavam_eco`. Two parts with different standing:
 
@@ -8,7 +8,7 @@ Shared by `vavam` and `vavam_eco`. Two parts with different standing:
 | `vendor/vam/__init__.py`, `vendor/vam/*/__init__.py`, `vendor/vam/_instantiate.py` | package files: only the modules above, and hydra's `instantiate` for `_target_` configs | written here |
 | `transforms.py` | `NeuroNCAPTransform`, `SafeResize`, `Normalize`: VaVAM's image preprocessing for closed loop | VideoActionModel `vam/datalib/transforms.py`, unchanged |
 | `run.py` | the agent: VaVAM's closed-loop client stepped by HUGSIM | follows VideoActionModel `inference/runner.py` (`VAMRunner.forward_inference`); see below |
-| `eco.py` | ECO | **our reimplementation** of arXiv 2609.31383 (no code released); see below |
+| `../_eco/eco.py` | ECO, shared with `drivor_eco` | **our reimplementation** of arXiv 2609.31383 (no code released); see below |
 
 The package keeps the name `vam` because the released checkpoints name their classes by path
 (hydra `_target_`s and pickled objects); only `vendor/` is put on `sys.path`.

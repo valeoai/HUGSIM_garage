@@ -45,6 +45,7 @@ CHECKPOINTS = {
     "drivor": [("drivor/drivor_Nav1_25epochs.pth", DRIVOR, "e1a678f201e4f1ab93d117caad42782cd7ead293bdced2b5f80212bc92426ae3")],
     "drivor_paper": [("drivor_paper/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "toad": [("toad/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
+    "drivor_eco": [("drivor_eco/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "gtrs": [("gtrs/gtrs_dense_vov.ckpt", f"{GTRS}/gtrs_dense_vov.ckpt", "8bab5fb86fe9071365e53a18328d5fa1c91000515f9446bcb05eadc34ae5b95d"),
              ("gtrs/16384.npy", f"{VOCAB}/16384.npy", "e8c29cfc25add59ae8b64769a4554c6518878726178c0bd889fc8518ebe1261d")],
     "ztrs": [("ztrs/ztrs_vov.ckpt", ZTRS, "26d45c0efc47f1823896ed9fe909d84e3c1f483f56ee49274c09de0838fa3415"),

@@ -18,7 +18,7 @@ One choice is ours, because the client was driven at 2 Hz and HUGSIM steps every
 frames are the ones 0.5 s apart ending at the current frame (t, t - 0.5, ...), VaVAM's training rate,
 rather than every simulator frame. At an episode's start the context is shorter, as in the client.
 
-``vavam_eco`` passes the plan through ECO (``agents/_vavam/eco.py``, our reimplementation of arXiv
+``vavam_eco`` passes the plan through ECO (``agents/_eco/eco.py``, our reimplementation of arXiv
 2609.31383), anchored to the poses executed 1.0 s and 0.5 s before the step (from ``info['ego_box']``).
 
 The flow's noise is drawn each step and the client never seeded it; ``HUGSIM_AGENT_SEED`` seeds torch
@@ -94,7 +94,7 @@ class VaVAM:
 
 def make_step(agent, episode_dir, device='cuda', ckpt_root=None, seed=None):
     """``(step, on_done)`` for ``agents.client.serve`` or an in-process call; see the module docstring."""
-    from agents._vavam.eco import eco, history_poses
+    from agents._eco.eco import eco, history_poses
 
     if agent not in AGENTS:
         raise KeyError(f'unknown agent {agent!r}; one of {AGENTS}')

@@ -50,6 +50,9 @@ class AgentSpec:
     # GPU, cuDNN's default TF32 convolutions then move its plans by up to 2.5 cm on scene-0383
     # against 2e-5 m with TF32 off, so the step turns TF32 off for itself (see Policy.step).
     fp32: bool = False
+    # Pass each plan through ECO (agents/_eco, our reimplementation of arXiv 2609.31383), with the
+    # model's own headings and the last two executed poses as anchors (agents/_navsim/run.py).
+    eco: bool = False
 
 
 def load_spec(name):

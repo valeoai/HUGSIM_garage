@@ -17,6 +17,7 @@ bring an environment of their own.
 | `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `ztrs/` | the simulator's | yes |
 | `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
 | `vavam` | [VaVAM](https://github.com/valeoai/VideoActionModel)-B (front camera, 2 Hz context), as its closed-loop client drives it | `_vavam/` | the simulator's, plus `mup` | yes |
+| `drivor_eco` | DrivoR (as `drivor`) + ECO, **our reimplementation**, with DrivoR's own headings | `drivor_eco/`, `_eco/` | the simulator's | yes |
 | `vavam_eco` | VaVAM-B + ECO (arXiv 2609.31383), **our reimplementation**: no ECO code is released | `_vavam/` | the simulator's, plus `mup` | yes |
 
 UniAD and VAD are built from mmcv 1.x registries and call its compiled CUDA ops (deformable
@@ -74,7 +75,7 @@ naming its log, rather than leaving the simulator waiting on a pipe.
 
 ### In-process
 
-The nine agents that run in the simulator's environment can also be called in its process,
+The ten agents that run in the simulator's environment can also be called in its process,
 with no launcher and no pipes:
 
 ```bash
@@ -119,6 +120,7 @@ every garage run has used), and links the files agents share (DrivoR's weights f
 | `vavam/VAM_width_1024_pretrained_139k.pt` | VaVAM-B, [valeoai/VideoActionModel v1.0.0 release](https://github.com/valeoai/VideoActionModel/releases/tag/v1.0.0) (research-only RAIL-M licence) |
 | `vavam/VQ_ds16_16384_llamagen_encoder.jit` | VaVAM's image tokenizer, same release |
 | `vavam_eco/*` | the same two files as `vavam/` (links) |
+| `drivor_eco/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a link) |
 
 The checkpoints carry their backbones' weights, so nothing else is downloaded at start-up (no
 DINOv2 or DD3D files, no Hugging Face fetch). A missing file stops the agent with the path it

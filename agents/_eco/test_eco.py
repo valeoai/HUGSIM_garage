@@ -1,6 +1,6 @@
-"""Checks of agents/_vavam/eco.py against the ECO paper's definitions. Run from the repository root:
+"""Checks of agents/_eco/eco.py against the ECO paper's definitions. Run from the repository root:
 
-    python -m agents._vavam.test_eco
+    python -m agents._eco.test_eco
 
 The objective is recomputed here with explicit loops over the paper's index ranges (arXiv 2609.31383,
 Sec. III-B), independently of eco.py's vectorized version.
@@ -11,7 +11,7 @@ import math
 import numpy as np
 import torch
 
-from agents._vavam.eco import HISTORY, W_DEV, W_SMOOTH, W_TURN, eco, history_poses, objective_terms, segment_headings
+from agents._eco.eco import HISTORY, W_DEV, W_SMOOTH, W_TURN, eco, history_poses, objective_terms, segment_headings
 
 
 def wrap(a):

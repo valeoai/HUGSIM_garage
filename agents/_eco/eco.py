@@ -16,8 +16,9 @@ z_i = h_{i+1} for i < 0:
            1_i = 1 when |c_i| > 0.5 m^2 and both segments are longer than 0.1 m
     D    = sum_{i=0}^{N-1} |x_i - x0_i|^2           (the endpoint's term is 0: it is fixed)
 
-solved with L-BFGS-B from x0. A position-only policy's headings are those of its segments: theta_i is
-the heading of p_{i-1} -> p_i, with p_{-1} = h_0 (the paper's convention for such policies).
+solved with L-BFGS-B from x0. A policy that outputs headings (DrivoR) gives theta0_i itself; a position-only
+policy's (VaVAM) are those of its segments: theta_i is the heading of p_{i-1} -> p_i, with p_{-1} = h_0 (the
+paper's convention for such policies).
 
 Not in the paper, chosen here: the solver's tolerances and iteration cap are scipy's L-BFGS-B
 defaults; D's heading difference is wrapped to [-pi, pi] like S's; the gradient is exact (torch
@@ -64,17 +65,19 @@ def objective_terms(z, x, x0):
     return S, C, D
 
 
-def eco(plan, history=()):
+def eco(plan, history=(), headings=None):
     """ECO on a position plan.
 
     ``plan``: (N, 2) waypoints, ego frame (x forward, y left), the policy's fixed-period output.
     ``history``: up to K executed poses (x, y, heading) in the current ego frame, oldest first
     (h_{-K} .. h_{-1}); the current pose (0, 0, 0) is added here. Fewer than K at an episode's start.
+    ``headings``: (N,) the policy's own waypoint headings (ego frame), else those of the segments.
     Returns ``(points (N, 2), info)``; the last point is ``plan[-1]`` exactly.
     """
     plan = np.asarray(plan, dtype=np.float64)
     n = len(plan)
-    x0 = np.column_stack([plan, segment_headings(plan)])
+    theta0 = segment_headings(plan) if headings is None else np.asarray(headings, dtype=np.float64).reshape(-1)
+    x0 = np.column_stack([plan, theta0])
     hist = np.asarray(list(history)[-HISTORY:], dtype=np.float64).reshape(-1, 3)
     anchors = np.vstack([hist, np.zeros((1, 3))])
     if n < 3:
