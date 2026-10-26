@@ -158,7 +158,7 @@ def write_cloud(path, xyz):
 
 
 def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full',
-                   agent_name=None, before_fixes=False, as_upstream=False):
+                   agent_name=None, before_fixes=False, as_upstream=False, with_pr57=False):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -239,8 +239,10 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                 }
             elif before_fixes:
                 # As before the controller-step fix: the tracker at the plan's own 0.5 s spacing;
-                # with --as_upstream also the reference headings as upstream main computes them (no #57).
-                acc, steer_rate = traj2control(plan_traj, info, heading_order='upstream' if as_upstream else 'fixed')
+                # with --as_upstream also the reference headings as upstream main computes them (no #57),
+                # unless --with_pr57 asks for upstream with #57 applied.
+                heading_order = 'upstream' if as_upstream and not with_pr57 else 'fixed'
+                acc, steer_rate = traj2control(plan_traj, info, heading_order=heading_order)
                 action = {'acc': acc, 'steer_rate': steer_rate}
             else:
                 acc, steer_rate = traj2control(
@@ -365,6 +367,8 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
             result["before_fixes"] = True  # eval.json is then HUGSIM's score before the fixes
         if as_upstream:
             result["as_upstream"] = True  # driven as upstream HUGSIM main drives (closed_loop.py --as_upstream)
+            if with_pr57:
+                result["with_pr57"] = True  # ... with upstream PR #57 applied (--with_pr57)
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
@@ -479,6 +483,11 @@ if __name__ == "__main__":
              "move 2.5x farther at dt 0.1 than at 0.25), and the episode capped at 400 steps (40 s at dt 0.1). "
              "Run it under an output folder of its own; realized_score.json records as_upstream.")
     parser.add_argument(
+        "--with_pr57", action="store_true",
+        help="with --as_upstream: upstream main with its open PR #57 applied (the tracker's reference headings "
+             "computed correctly), keeping the step-size bugs and the 400-step cap. That is the HUGSIM the "
+             "DrivoR paper's results were run on (#56 and #57). realized_score.json records with_pr57.")
+    parser.add_argument(
         "--deterministic_tracker",
         action="store_true",
         help="stop the iLQR tracker on its iteration cap and convergence only, not on its 0.05 s "
@@ -500,6 +509,8 @@ if __name__ == "__main__":
              "The agent uses this process's GPU; --ad_cuda and --ad_path do not apply",
     )
     args = parser.parse_args()
+    if args.with_pr57 and not args.as_upstream:
+        raise SystemExit("--with_pr57 modifies --as_upstream; without it the fork's tracker already has #57")
     if args.as_upstream:
         args.before_fixes = True  # --as_upstream includes it
     if args.before_fixes and args.skip_native_eval:
@@ -646,7 +657,7 @@ if __name__ == "__main__":
         try:
             create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
                            realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
-                           before_fixes=args.before_fixes, as_upstream=args.as_upstream)
+                           before_fixes=args.before_fixes, as_upstream=args.as_upstream, with_pr57=args.with_pr57)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -656,7 +667,7 @@ if __name__ == "__main__":
             create_gym_env(cfg, output, FifoAgent(output, process),
                            skip_native_eval=args.skip_native_eval, video=video,
                            realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
-                           before_fixes=args.before_fixes, as_upstream=args.as_upstream)
+                           before_fixes=args.before_fixes, as_upstream=args.as_upstream, with_pr57=args.with_pr57)
             check_alive(process)
         except Exception:
             import traceback

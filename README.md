@@ -244,6 +244,10 @@ unfolds:
 | the AttackPlanner called on a fixed 0.1 s plan, one row per call, forecasts on the simulator's step, replanned on a step count: at dt 0.1 its actors move 2.5x the distance they cover at the shipped 0.25 s | 98ee0bf, 5105d46, 3b4f070 |
 | the episode capped at 400 steps (100 s at 0.25 s, 40 s at 0.1 s) | 8dda047, a50c161 |
 
+`--as_upstream --with_pr57` is the same with upstream's open PR #57 applied, i.e. the reference
+headings computed correctly: the HUGSIM the DrivoR paper's results were run on (#56 and #57), with the
+step-size bugs and the step cap kept. At dt 0.25 s it drives as `--before_fixes` does.
+
 Kept: the IDM lookahead fix (dd964ea) and the last pose's command (`dense_cam_poses`), whose upstream
 behaviour raises and loses the episode rather than driving it differently; the observation modes and
 the scene export, which only hand the agent information. `realized_score.json` records
