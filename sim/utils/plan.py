@@ -32,7 +32,7 @@ class planner:
         #: nominal speed; that is the shipped behaviour and is deliberately preserved.
         self.ATTACK_DT_REF = 0.25
         self._attack_elapsed = {}
-        #: closed_loop.py --before_fixes (and --as_upstream): call the AttackPlanner as upstream HUGSIM does (98ee0bf,
+        #: closed_loop.py --as_drivor_paper (and --as_upstream): call the AttackPlanner as upstream HUGSIM does (98ee0bf,
         #: 5105d46 and 3b4f070 are not there): dt 0.1 whatever the step, forecasts on the simulator's
         #: step, one plan row per call and the step-count replan trigger. At dt 0.1 its actors then
         #: move 2.5x the distance they cover at the shipped 0.25 s step.

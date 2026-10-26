@@ -226,7 +226,7 @@ Two scores, for two questions:
 | `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written at the end of every episode unless `--skip-native-eval` is passed or HUGSIM's scorer fails on it (`get_score.py` averages them) |
 | the realized score, TerraTransfer's closed-loop HD-Score ([arXiv 2606.17386](https://arxiv.org/abs/2606.17386), App. B) | the **realized** trajectory: per 0.5 s keyframe NC and DAC at the ego's pose, TTC propagated 1 s ahead, comfort over the next 1 s | `realized_score.json` with `--realized_score`, or `score_realized.py` for past runs |
 
-`--before_fixes` drives and scores as the HUGSIM the published results such as the DrivoR paper's were
+`--as_drivor_paper` (earlier `--before_fixes`, still accepted) drives and scores as the HUGSIM the published results such as the DrivoR paper's were
 run on: upstream main (hyzhou404/HUGSIM `62c690d`, #56) with its PR #57, and none of this fork's later fixes
 that change an episode or a score. It restores, for each such fix, the upstream behaviour:
 
@@ -238,13 +238,13 @@ that change an episode or a score. It restores, for each such fix, the upstream 
 | `eval.json` judges each plan from the pose one step after it was made (the frames kept as `frames_before_fixes` in `data.pkl`), with the collision box from before #76 | the plan-pose and collision-box fixes |
 
 At the shipped dt 0.25 s the step-size fixes change nothing, so there only the tracker and `eval.json`
-differ from the default run. `--as_upstream` is `--before_fixes` without #57, which upstream main still
+differ from the default run. `--as_upstream` is `--as_drivor_paper` without #57, which upstream main still
 lacks: the tracker's reference headings computed with swapped `atan2` arguments (pi/2 minus the heading).
 It is the HUGSIM results such as TerraTransfer++'s (arXiv 2610.30319, at dt 0.1 s) were run on. Kept in
 both: the IDM lookahead fix (dd964ea) and the last pose's command (`dense_cam_poses`), whose upstream
 behaviour raises and loses the episode rather than driving it differently; the observation modes and the
-scene export, which only hand the agent information. `realized_score.json` records `"before_fixes": true`
-(and `"as_upstream": true`); keep these episodes in an output folder of their own. Validated against
+scene export, which only hand the agent information. `realized_score.json` records `"as_drivor_paper": true`
+(and `"as_upstream": true`; episodes run as `--before_fixes` say `"before_fixes": true`); keep these episodes in an output folder of their own. Validated against
 upstream checkouts: LTF on official436 reproduces their scores.
 
 `hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
