@@ -15,7 +15,7 @@ Model = namedtuple('Models', ['model_path', 'controller', 'controller_args'])
 
 
 class planner:
-    def __init__(self, plan_list, scene_path=None, dt=0.2, unified_map=None, ground=None):
+    def __init__(self, plan_list, scene_path=None, dt=0.2, unified_map=None, ground=None, as_upstream=False):
         self.unified_map = unified_map
         self.ground = ground
         self.PREDICT_STEPS = 20
@@ -32,6 +32,11 @@ class planner:
         #: nominal speed; that is the shipped behaviour and is deliberately preserved.
         self.ATTACK_DT_REF = 0.25
         self._attack_elapsed = {}
+        #: closed_loop.py --as_upstream: call the AttackPlanner as upstream HUGSIM main does (98ee0bf,
+        #: 5105d46 and 3b4f070 are not there): dt 0.1 whatever the step, forecasts on the simulator's
+        #: step, one plan row per call and the step-count replan trigger. At dt 0.1 its actors then
+        #: move 2.5x the distance they cover at the shipped 0.25 s step.
+        self.as_upstream = as_upstream
         
         self.rectify_angle = 0
         if self.unified_map is not None:
@@ -120,6 +125,13 @@ class planner:
             if type(controller) is IDM:
                 next_xyrv = controller.update(state=stat[[0, 1, 3, 4]], path=self.route[iid], dt=self.dt,
                                               neighbors=neighbors)
+            elif type(controller) is AttackPlanner and self.as_upstream:
+                # Upstream main's call, unchanged (see self.as_upstream). With no sim_dt the
+                # AttackPlanner advances one row of its 0.1 s plan per call, as upstream's did.
+                safe_neighbors = neighbors[1:, ...]
+                next_xyrv = controller.update(state=stat[[0, 1, 3, 4]], unified_map=self.unified_map, dt=0.1,
+                                              neighbors=safe_neighbors, attacked_states=future_states[0],
+                                              new_plan=((t // self.dt) % self.ATTACK_FREQ == 0))
             elif type(controller) is AttackPlanner:
                 # The attacker plans on ATTACK_DT, so the victim and neighbour forecasts it is scored
                 # against have to sit on that grid too. future_states uses self.dt, and the cost

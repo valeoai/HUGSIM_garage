@@ -51,7 +51,7 @@ def create_cam(intrinsic, c2w):
     cam = Camera(K=K, c2w=c2w, width=w, height=h, image=None, image_name='')
     return cam
 
-def traj2control(plan_traj, info, plan_dt=0.5, sim_dt=None):
+def traj2control(plan_traj, info, plan_dt=0.5, sim_dt=None, heading_order='fixed'):
     """
         The input plan trajectory is under lidar coordinates
         x to right, y to forward and z to upward
@@ -62,6 +62,9 @@ def traj2control(plan_traj, info, plan_dt=0.5, sim_dt=None):
             longer (or shorter) than the one actually executed, and tracking lags systematically.
             When it differs from plan_dt the reference is resampled onto the simulator's timeline.
             Defaults to plan_dt.
+        heading_order: 'fixed' (atan2(lateral, longitudinal), upstream PR #57) or 'upstream', the
+            arguments as upstream HUGSIM main still has them (#57 is not merged there): atan2(longitudinal,
+            lateral), pi/2 minus the heading. closed_loop.py --as_upstream asks for it.
     """
     if sim_dt is None:
         sim_dt = plan_dt
@@ -87,7 +90,10 @@ def traj2control(plan_traj, info, plan_dt=0.5, sim_dt=None):
     prev_fwd, prev_right = ref_fr[0]
     for i, (fwd, right) in enumerate(ref_fr[1:]):
         # Heading in the tracker frame: atan2(lateral, longitudinal).
-        rot = np.arctan2(right - prev_right, fwd - prev_fwd)
+        if heading_order == 'upstream':
+            rot = np.arctan2(fwd - prev_fwd, right - prev_right)
+        else:
+            rot = np.arctan2(right - prev_right, fwd - prev_fwd)
         rot = np.where(rot > np.pi/2, rot - np.pi, rot)
         rot = np.where(rot < -np.pi/2, rot + np.pi, rot)
         plan_traj_stats[i+1, 2] = rot

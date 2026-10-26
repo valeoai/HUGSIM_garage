@@ -233,6 +233,23 @@ plan from the pose one step after it was made (the frames kept as `frames_before
 `data.pkl`), with the collision box from before #76. Use it to compare with those numbers; keep its
 episodes apart from others (`realized_score.json` records `"before_fixes": true`).
 
+`--as_upstream` goes further and drives as upstream HUGSIM main (hyzhou404/HUGSIM `62c690d`) does,
+to compare with results run on it, such as TerraTransfer++'s (arXiv 2610.30319, at dt 0.1 s). It implies
+`--before_fixes` and restores the upstream behaviour of every fork fix that changes how an episode
+unfolds:
+
+| upstream behaviour restored | fork fix it undoes |
+|---|---|
+| the tracker's reference headings computed with swapped `atan2` arguments (pi/2 minus the heading) | upstream PR #57 (open there) |
+| the AttackPlanner called on a fixed 0.1 s plan, one row per call, forecasts on the simulator's step, replanned on a step count: at dt 0.1 its actors move 2.5x the distance they cover at the shipped 0.25 s | 98ee0bf, 5105d46, 3b4f070 |
+| the episode capped at 400 steps (100 s at 0.25 s, 40 s at 0.1 s) | 8dda047, a50c161 |
+
+Kept: the IDM lookahead fix (dd964ea) and the last pose's command (`dense_cam_poses`), whose upstream
+behaviour raises and loses the episode rather than driving it differently; the observation modes and
+the scene export, which only hand the agent information. `realized_score.json` records
+`"as_upstream": true`; run it under an output folder of its own. Validated against an upstream
+checkout: LTF on official436 reproduces its scores (see *Results*).
+
 `hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
 comparable with TerraTransfer, and with any agent that, like its jerk policy, has no
 multi-second plan to score. It reads only what an episode already saves, so every past run can

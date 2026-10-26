@@ -144,7 +144,8 @@ class HUGSimEnv(gymnasium.Env):
         Yaw is based on ego car's orientation. 0 means same direction as ego. 
         Right is positive and left is negative.
         """
-        self.planner = planner(plan_list, scene_path=cfg.model_path, unified_map=unified_map, ground=self.ground_model, dt=cfg.kinematic.dt)
+        self.planner = planner(plan_list, scene_path=cfg.model_path, unified_map=unified_map, ground=self.ground_model, dt=cfg.kinematic.dt,
+                               as_upstream=bool(cfg.base.get('as_upstream', False)))
         
         (model_params, iteration) = torch.load(os.path.join(cfg.model_path, "scene.pth"), weights_only=False)
         self.gaussians.restore(model_params, None)
