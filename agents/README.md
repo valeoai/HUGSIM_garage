@@ -16,6 +16,8 @@ bring an environment of their own.
 | `gtrs` | GTRS-Dense (VoVNet, 16384 vocabulary) | `gtrs/` | the simulator's | yes |
 | `ztrs` | ZTRS (VoVNet, 16384 vocabulary) | `ztrs/` | the simulator's | yes |
 | `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
+| `vavam` | [VaVAM](https://github.com/valeoai/VideoActionModel)-B (front camera, 2 Hz context), as its closed-loop client drives it | `_vavam/` | the simulator's, plus `mup` | yes |
+| `vavam_eco` | VaVAM-B + ECO (arXiv 2609.31383), **our reimplementation**: no ECO code is released | `_vavam/` | the simulator's, plus `mup` | yes |
 
 UniAD and VAD are built from mmcv 1.x registries and call its compiled CUDA ops (deformable
 attention, DCNv2), so they keep that stack, in a pixi workspace of their own: see
@@ -44,6 +46,12 @@ NAVSIM-family code).
   including what `drivor` ran before the two were separated (README.md, *Results written before
   agents/toad*), are that version's.
 
+`vavam` and `vavam_eco` (`agents/_vavam`, see its `NOTICE.md`) run the released VaVAM-B, the model the ECO
+paper drives, as VaVAM's own closed-loop client does (front camera, 288x512, 10 flow steps, bf16), with
+its context frames 0.5 s apart; `vavam_eco` passes each plan through ECO, which we reimplemented from
+the paper (no code is released): the endpoint fixed, the last two executed poses as anchors,
+`J = 3 S + 8 C + 0.05 D` by L-BFGS-B. Its results are ours, not the paper's.
+
 `dynamo` stays an external launcher (`HUGSIM_AD_DYNAMO`). The `dynamo_e2e.sh` that `hugsim_env.sh`
 points it at is the client `toad` came from, so `--ad dynamo` with it runs TOAD (with the client's CEM settings), not Dynamo.
 
@@ -66,7 +74,7 @@ naming its log, rather than leaving the simulator waiting on a pipe.
 
 ### In-process
 
-The seven agents that run in the simulator's environment can also be called in its process,
+The nine agents that run in the simulator's environment can also be called in its process,
 with no launcher and no pipes:
 
 ```bash
@@ -108,6 +116,9 @@ every garage run has used), and links the files agents share (DrivoR's weights f
 | `ztrs/16384.npy` | as `gtrs/16384.npy` |
 | `gtrs_aug/gtrs_aug_vov.ckpt` | [Zzxxxxxxxx/gtrs](https://huggingface.co/Zzxxxxxxxx/gtrs/blob/main/gtrs_aug_vov.ckpt) |
 | `gtrs_aug/8192.npy` | `traj_final/8192.npy` in NVlabs/GTRS |
+| `vavam/VAM_width_1024_pretrained_139k.pt` | VaVAM-B, [valeoai/VideoActionModel v1.0.0 release](https://github.com/valeoai/VideoActionModel/releases/tag/v1.0.0) (research-only RAIL-M licence) |
+| `vavam/VQ_ds16_16384_llamagen_encoder.jit` | VaVAM's image tokenizer, same release |
+| `vavam_eco/*` | the same two files as `vavam/` (links) |
 
 The checkpoints carry their backbones' weights, so nothing else is downloaded at start-up (no
 DINOv2 or DD3D files, no Hugging Face fetch). A missing file stops the agent with the path it

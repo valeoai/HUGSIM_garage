@@ -25,6 +25,7 @@ tqdm = ">=4.67.1, <5"
 opencv-python = ">=4.11.0.86, <5"
 scipy = ">=1.15.2, <2"
 einops = ">=0.8.1, <0.9"
+mup = "==1.0.0"  # VaVAM (agents/_vavam): MuReadout, MuSharedReadout, normal_, set_base_shapes
 trimesh = ">=4.6.6, <5"
 tensorboard = ">=2.19.0, <3"
 gpustat = ">=1.1.1, <2"
