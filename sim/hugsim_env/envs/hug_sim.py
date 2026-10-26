@@ -145,7 +145,7 @@ class HUGSimEnv(gymnasium.Env):
         Right is positive and left is negative.
         """
         self.planner = planner(plan_list, scene_path=cfg.model_path, unified_map=unified_map, ground=self.ground_model, dt=cfg.kinematic.dt,
-                               as_upstream=bool(cfg.base.get('as_upstream', False)))
+                               upstream_actors=bool(cfg.base.get('upstream_actors', False)))
         
         (model_params, iteration) = torch.load(os.path.join(cfg.model_path, "scene.pth"), weights_only=False)
         self.gaussians.restore(model_params, None)
