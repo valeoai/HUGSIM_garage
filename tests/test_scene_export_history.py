@@ -130,7 +130,7 @@ def test_history_matches_ego_frame_transform(pitch):
 def test_heading_wrapped():
     ego = [0, 0, 0, 1.9, 4.5, 1.5, 3.0]
     out = box_history_to_ego(np.array([[_box(5, 0, -3.0)]]), ego)
-    assert -np.pi < out[0, 0, 2] <= np.pi
+    assert abs(out[0, 0, 2]) <= np.float32(np.pi)
     np.testing.assert_allclose(out[0, 0, 2], -6.0 + 2 * np.pi, atol=1e-6)
 
 

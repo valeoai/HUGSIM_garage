@@ -2,7 +2,7 @@
 
 A policy that reads past frames needs the scene as it was a moment ago, often at a finer time
 step than HUGSIM's snapshots, so it can interpolate each actor's pose between snapshots. Three
-arrays are exported for that, aligned row for row with ``info['pictura']['cuboids']``:
+arrays are exported for that, aligned row for row with ``info['scene_export']['cuboids']``:
 
 * ``cuboid_history`` -- ``(K, N, 3)`` float32, each cuboid's ``(x, y, heading)`` at the last
   ``N`` HUGSIM snapshots, oldest first, the last being now, all in the CURRENT ego frame.
@@ -25,7 +25,7 @@ is too short.
 
 ``base.scene_export_history_seconds: 0`` turns the history off (``pose_history`` returns None):
 a policy that reads only the present then pays nothing for it, and the three keys are left out
-of ``info['pictura']``, whose other keys are unchanged. Anything but a finite number >= 0 is an
+of ``info['scene_export']``, whose other keys are unchanged. Anything but a finite number >= 0 is an
 error, ``None`` and booleans included (0, not ``false``, is the off value); a numeric string
 counts as its number.
 """
@@ -38,6 +38,13 @@ from sim.scene_export.entities import box_history_to_ego
 # takes it from base.scene_export_history_seconds when the config sets it.
 SCENE_EXPORT_HISTORY_SECONDS = 0.5
 
+# Seconds: the slack a consumer uses when testing ``snapshot_times[0] <= -d``.
+TIME_EPS = 1e-6
+# Decimals the exported times are rounded to (microseconds), so a float clock's ulp drift vanishes.
+TIME_DECIMALS = 6
+# Unitless: slack on seconds / dt, so a quotient that is an integer up to rounding is not bumped up.
+RATIO_EPS = 1e-6
+
 
 def history_length(dt, seconds=SCENE_EXPORT_HISTORY_SECONDS):
     """Snapshots needed to look back ``seconds`` when the env steps every ``dt``.
@@ -45,7 +52,7 @@ def history_length(dt, seconds=SCENE_EXPORT_HISTORY_SECONDS):
     ``ceil(seconds / dt) + 1``, the +1 being "now": 3 at dt = 0.25 s, 6 at dt = 0.1 s. The
     tolerance keeps a quotient that is an integer up to rounding from taking one more.
     """
-    return int(np.ceil(seconds / dt - 1e-6)) + 1
+    return int(np.ceil(seconds / dt - RATIO_EPS)) + 1
 
 
 def pose_history(dt, seconds=SCENE_EXPORT_HISTORY_SECONDS):
@@ -130,5 +137,5 @@ class PoseHistory:
                     boxes[i, j] = snap[oid]
                     valid[i, j] = True
         times = np.array([t for t, _ in self._snaps], dtype=np.float64)
-        times = np.round(times - times[-1], 6) if n else times
+        times = np.round(times - times[-1], TIME_DECIMALS) if n else times
         return box_history_to_ego(boxes, ego_box, pitch), valid, times
