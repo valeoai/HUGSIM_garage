@@ -10,7 +10,7 @@ sys.path.append(os.getcwd())
 import gymnasium
 import hugsim_env
 from hugsim_env.envs.hug_sim import OBS_CHANNELS, OBS_MODES, RASTER_RIGS, RASTER_VIEWS, resolve_raster
-from argparse import ArgumentParser
+from argparse import ArgumentParser, BooleanOptionalAction
 from sim.utils.sim_utils import traj2control, traj_transform_to_global
 from sim.ilqr.lqr import set_max_solve_time
 import pickle
@@ -157,7 +157,7 @@ def write_cloud(path, xyz):
     PlyData([PlyElement.describe(vertex, 'vertex')], byte_order='<').write(path)
 
 
-def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full',
+def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=(), outputs='full',
                    agent_name=None, as_drivor_paper=False, as_upstream=False):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
@@ -361,6 +361,12 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
             result = score_episode(output, cfg.model_path, clouds=clouds)
             if result is None:  # fewer than two frames, no crash: a file of `null` would read as a crash-free score
                 result = {"too_short": True}
+            else:
+                # Keep only the variants asked for, each with its own route completion.
+                if "points" not in realized_score:
+                    result.pop("hdscore_realized"); result.pop("rc")
+                if "arclength" not in realized_score:
+                    result.pop("hdscore_realized_arclength"); result.pop("rc_arclength")
         # Which --ad drove: a record is otherwise only labelled by its folder name, and the name
         # `drivor` meant TOAD before agents/toad existed (run_benchmark.py refuses those records).
         result["agent"] = agent_name
@@ -460,11 +466,18 @@ if __name__ == "__main__":
              "infos.pkl, the video). scoring: only what scoring needs -- data.pkl, the scores, and "
              "ground.ply / scene.ply cropped to the corridor of the episode's own poses, which no "
              "scorer looks beyond, so every score is unchanged; no infos.pkl; --video defaults to off.")
+    # One option per score: --hdscore (eval.json), --realized_score and --realized_score_arclength
+    # (realized_score.json).
     parser.add_argument(
-        "--skip-native-eval",
-        action="store_true",
-        help="do not run HUGSIM's own scorer or write eval.json (~69 s/episode); data.pkl is "
-             "still written, so the episode can be scored offline",
+        "--hdscore", action=BooleanOptionalAction, default=True,
+        help="write hdscore, HUGSIM's own score of the planned trajectory, to eval.json (on by default). "
+             "--no-hdscore skips HUGSIM's scorer (~69 s/episode); data.pkl is still written, so the "
+             "episode can be scored offline",
+    )
+    parser.add_argument(
+        # Its earlier name, still accepted.
+        "--skip-native-eval", dest="hdscore", action="store_false",
+        help="same as --no-hdscore",
     )
     parser.add_argument(
         # --before_fixes is its earlier name, still accepted.
@@ -493,8 +506,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--realized_score",
         action="store_true",
-        help="also write realized_score.json: TerraTransfer's closed-loop HD-Score, of the realized "
-             "trajectory (sim/utils/realized_score.py), next to HUGSIM's own eval.json",
+        help="write hdscore_realized to realized_score.json: TerraTransfer++'s closed-loop HD-Score of "
+             "the realized trajectory (sim/utils/realized_score.py), route completion in route points",
+    )
+    parser.add_argument(
+        "--realized_score_arclength",
+        action="store_true",
+        help="write hdscore_realized_arclength to realized_score.json: the same score with route "
+             "completion as the distance along the route, as TerraTransfer (arXiv v1/v2) measures it",
     )
     parser.add_argument(
         "--in_process",
@@ -504,12 +523,15 @@ if __name__ == "__main__":
              "The agent uses this process's GPU; --ad_cuda and --ad_path do not apply",
     )
     args = parser.parse_args()
+    args.skip_native_eval = not args.hdscore
+    # The realized-score variants asked for, in the order realized_score.json lists them.
+    realized = [v for v, on in (("points", args.realized_score), ("arclength", args.realized_score_arclength)) if on]
     if args.as_upstream:
         args.as_drivor_paper = True  # --as_upstream includes it
     if args.as_drivor_paper and args.skip_native_eval:
         # Only the episode's own scoring judges frames_before_fixes with the old box; the offline
         # scorers that --skip-native-eval leaves the score to are the fork's.
-        raise SystemExit("--as_drivor_paper (--before_fixes) needs HUGSIM's own scorer: drop --skip-native-eval")
+        raise SystemExit("--as_drivor_paper needs HUGSIM's own scorer: drop --no-hdscore (--skip-native-eval)")
     if args.deterministic_tracker:
         set_max_solve_time(None)
     if args.in_process and args.ad_path is not None:
@@ -649,7 +671,7 @@ if __name__ == "__main__":
     if args.in_process:
         try:
             create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
+                           realized_score=realized, outputs=args.outputs, agent_name=args.ad,
                            as_drivor_paper=args.as_drivor_paper, as_upstream=args.as_upstream)
         except Exception:
             import traceback
@@ -659,7 +681,7 @@ if __name__ == "__main__":
         try:
             create_gym_env(cfg, output, FifoAgent(output, process),
                            skip_native_eval=args.skip_native_eval, video=video,
-                           realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
+                           realized_score=realized, outputs=args.outputs, agent_name=args.ad,
                            as_drivor_paper=args.as_drivor_paper, as_upstream=args.as_upstream)
             check_alive(process)
         except Exception:

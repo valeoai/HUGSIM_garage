@@ -3,7 +3,7 @@
     python run_benchmark.py --agents uniad vad ltf --set official436 --slots 0:6 1:2
 
 Each job is one closed_loop.py episode (agent x scenario of $HUGSIM_DATA/HUGSIM/ss/scenarios/<set>/),
-run with --outputs scoring --realized_score, so its folder holds data.pkl, eval.json,
+run with --outputs scoring --realized_score --realized_score_arclength, so its folder holds data.pkl, eval.json,
 realized_score.json and the cropped clouds. A job whose folder already holds realized_score.json
 is skipped, so a run can be stopped and restarted. Agents listed in agents/registry.py run
 --in_process; the others over the pipes, on the same GPU. A job past --timeout is killed with its
@@ -105,7 +105,7 @@ def command(job, args):
     cmd = [args.python, "closed_loop.py", "--scenario_path", job["scenario"],
            "--base_path", f"configs/sim/{ds}_base.yaml", "--camera_path", f"configs/sim/{ds}_camera.yaml",
            "--kinematic_path", "configs/sim/kinematic.yaml", "--ad", job["agent"], "--ad_cuda", "0",
-           "--outputs", "scoring", "--realized_score"] + args.extra
+           "--outputs", "scoring", "--realized_score", "--realized_score_arclength"] + args.extra
     if job["agent"] in IN_PROCESS and not args.no_in_process:
         cmd.append("--in_process")
     return cmd
