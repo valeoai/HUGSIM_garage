@@ -325,7 +325,7 @@ def score_episode(ep_dir, scene_dir, clouds=None):
     rc = float(min(1.0, max(native))) if native else rc_arclength
     mean = {k: float(np.mean([p[k] for p in per])) for k in ("nc", "dac", "ttc", "c", "pdms")}
     # `hdscore` is HUGSIM's own score, of the planned trajectory, copied from eval.json (None when
-    # the episode has none: --skip-native-eval, or HUGSIM's scorer died), so the three variants sit
+    # the episode has none: --no-hdscore, or HUGSIM's scorer died), so the three variants sit
     # side by side; this scorer's own is `hdscore_realized`.
     # closed_loop.py writes eval.json after data.pkl; one older than data.pkl is a previous run's.
     eval_path, data_path = os.path.join(ep_dir, "eval.json"), os.path.join(ep_dir, "data.pkl")
