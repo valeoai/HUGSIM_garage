@@ -1,7 +1,8 @@
 """Agents that closed_loop.py can run in the simulator's process (``--in_process``).
 
-The in-process agents are the NAVSIM family (``agents._navsim.AGENTS``); ``agents._navsim.run``
-defines ``make_step(agent, episode_dir, device, ckpt_root=None) -> (step, on_done)``. Nothing heavy
+The in-process agents are the NAVSIM family (``agents._navsim.AGENTS``) and VaVAM
+(``agents._vavam``); ``agents._navsim.run`` and ``agents._vavam.run`` both define
+``make_step(agent, episode_dir, device, ckpt_root=None) -> (step, on_done)``. Nothing heavy
 is imported here; the module is imported by :func:`load_in_process`.
 """
 
@@ -10,6 +11,8 @@ import importlib
 from ._navsim import AGENTS
 
 IN_PROCESS = {name: ('agents._navsim.run', name) for name in AGENTS}
+# VaVAM and VaVAM + ECO (agents/_vavam): their make_step has the same signature.
+IN_PROCESS.update({name: ('agents._vavam.run', name) for name in ('vavam', 'vavam_eco')})
 
 
 def load_in_process(name, episode_dir, device='cuda'):

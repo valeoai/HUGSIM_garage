@@ -31,6 +31,8 @@ GTRS = "https://huggingface.co/Zzxxxxxxxx/gtrs/resolve/main"
 ZTRS = "https://huggingface.co/Zzxxxxxxxx/ZTRS/resolve/main/ztrs_vov.ckpt"
 # NVlabs/GTRS at a fixed commit (its default branch is master), so the vocabulary cannot change under a run.
 VOCAB = "https://raw.githubusercontent.com/NVlabs/GTRS/92a740def80610e4096962d25cc837b21e72ef78/traj_final"
+# VaVAM's v1.0.0 release (valeoai/VideoActionModel): VaVAM-B, the model the ECO paper drives, and its image tokenizer.
+VAVAM = "https://github.com/valeoai/VideoActionModel/releases/download/v1.0.0"
 
 #: agent -> [(path under the root, source, sha256)]; a source starting with "=" is another entry's path,
 #: linked rather than downloaded again.
@@ -43,12 +45,17 @@ CHECKPOINTS = {
     "drivor": [("drivor/drivor_Nav1_25epochs.pth", DRIVOR, "e1a678f201e4f1ab93d117caad42782cd7ead293bdced2b5f80212bc92426ae3")],
     "drivor_paper": [("drivor_paper/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "toad": [("toad/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
+    "drivor_eco": [("drivor_eco/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "gtrs": [("gtrs/gtrs_dense_vov.ckpt", f"{GTRS}/gtrs_dense_vov.ckpt", "8bab5fb86fe9071365e53a18328d5fa1c91000515f9446bcb05eadc34ae5b95d"),
              ("gtrs/16384.npy", f"{VOCAB}/16384.npy", "e8c29cfc25add59ae8b64769a4554c6518878726178c0bd889fc8518ebe1261d")],
     "ztrs": [("ztrs/ztrs_vov.ckpt", ZTRS, "26d45c0efc47f1823896ed9fe909d84e3c1f483f56ee49274c09de0838fa3415"),
              ("ztrs/16384.npy", "=gtrs/16384.npy", None)],
     "gtrs_aug": [("gtrs_aug/gtrs_aug_vov.ckpt", f"{GTRS}/gtrs_aug_vov.ckpt", "c1c433be768781f98b16d946b41fae4c4cc31d7b1715ee6b8b683dcf637ddd26"),
                  ("gtrs_aug/8192.npy", f"{VOCAB}/8192.npy", "cc44a31e75a53406db59f026f0358de97931e726f10254542f98d2a87a38ad35")],
+    "vavam": [("vavam/VAM_width_1024_pretrained_139k.pt", f"{VAVAM}/VAM_width_1024_pretrained_139k.pt", "129e887db30477d458933369964c98b51fdbeb5041eaf8efca4594e2ca56de18"),
+              ("vavam/VQ_ds16_16384_llamagen_encoder.jit", f"{VAVAM}/VQ_ds16_16384_llamagen_encoder.jit", "b5e2c47d04f8ff8a6a47433252aaeefaa8be16be83db6521521a78fefae7e228")],
+    "vavam_eco": [("vavam_eco/VAM_width_1024_pretrained_139k.pt", "=vavam/VAM_width_1024_pretrained_139k.pt", None),
+                  ("vavam_eco/VQ_ds16_16384_llamagen_encoder.jit", "=vavam/VQ_ds16_16384_llamagen_encoder.jit", None)],
 }
 SHA256 = {path: sha for files in CHECKPOINTS.values() for path, _, sha in files}
 SOURCE = {path: src for files in CHECKPOINTS.values() for path, src, _ in files}

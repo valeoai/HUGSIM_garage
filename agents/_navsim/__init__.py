@@ -6,4 +6,4 @@ Each agent is a folder of its own next to this one (``agents/ltf``, ``agents/dri
 """
 
 # The NAVSIM-family agent names: the single list ``policy.py``, ``run.py`` and ``registry.py`` use.
-AGENTS = ('ltf', 'drivor', 'drivor_paper', 'toad', 'gtrs', 'ztrs', 'gtrs_aug')
+AGENTS = ('ltf', 'drivor', 'drivor_paper', 'toad', 'gtrs', 'ztrs', 'gtrs_aug', 'drivor_eco')

@@ -14,6 +14,8 @@ import argparse
 import os
 import sys
 
+import numpy as np
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -40,9 +42,20 @@ def make_step(agent, episode_dir, device='cuda', ckpt_root=None, seed=None):
     if viz:
         os.makedirs(viz_folder, exist_ok=True)
     count = [0]
+    past = []  # (t, x, y, yaw) executed world poses, for ECO's anchors
 
     def step(obs, info):
         plan = policy.step(obs, info)
+        if policy.spec.eco:
+            from agents._eco.eco import eco, history_poses
+
+            box = info['ego_box']
+            now = (float(info['timestamp']), float(box[0]), float(box[1]), float(box[6]))
+            # (right, forward) -> (x forward, y left); NAVSIM headings are already in that frame
+            xy = np.column_stack([plan[:, 1], -plan[:, 0]])
+            xy, _ = eco(xy, history_poses(past, now, 0.5), headings=policy.last_way_points[:, 2])
+            past.append(now)
+            plan = np.column_stack([-xy[:, 1], xy[:, 0]])
         if viz:
             save_frame(
                 policy.last_raw_imgs, policy.last_way_points, info['cam_params'], os.path.join(viz_folder, f'{count[0]:04d}')
