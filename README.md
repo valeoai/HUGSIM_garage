@@ -114,7 +114,7 @@ launchers are in [`agents/`](agents/README.md) (`base.<ad>_path` is
 `${oc.env:HUGSIM_AD_<NAME>,agents/...}`, so an exported variable still replaces one), and
 `dynamo` and `pictura`, which live in unrelated checkouts and read their variable alone.
 
-The agents that run in this environment (`ltf`, `drivor`, `drivor_paper`, `toad`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
+The agents that run in this environment (`ltf`, `ltfv7`, `ltf_star`, `drivor`, `drivor_paper`, `toad`, `gtrs`, `ztrs`, `gtrs_aug`, listed in
 `agents/registry.py`) can be called in the simulator's process instead, with `--in_process`: no
 launcher, no pipes, and a step of LTF about 1.5 times faster. See
 [agents/README.md](agents/README.md#in-process).

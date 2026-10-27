@@ -13,6 +13,8 @@ gtrs_aug_path: ${oc.env:HUGSIM_AD_GTRS_AUG,agents/gtrs_aug/launch.sh}
 vavam_path: ${oc.env:HUGSIM_AD_VAVAM,agents/vavam/launch.sh}
 vavam_eco_path: ${oc.env:HUGSIM_AD_VAVAM_ECO,agents/vavam_eco/launch.sh}
 drivor_eco_path: ${oc.env:HUGSIM_AD_DRIVOR_ECO,agents/drivor_eco/launch.sh}
+ltfv7_path: ${oc.env:HUGSIM_AD_LTFV7,agents/ltfv7/launch.sh}
+ltf_star_path: ${oc.env:HUGSIM_AD_LTF_STAR,agents/ltf_star/launch.sh}
 pictura_path: ${oc.env:HUGSIM_AD_PICTURA}
 # This agent drives from the scene exported as geometry, which it rasterizes itself, rather
 # than from the Gaussian render. A vector checkpoint runs under an agent name of its own

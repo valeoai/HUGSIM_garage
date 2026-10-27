@@ -16,16 +16,17 @@ from .model import TransfuserModel
 class TransfuserAgent(torch.nn.Module):
     """Agent interface for TransFuser baseline."""
 
-    def __init__(self, config: TransfuserConfig):
+    def __init__(self, config: TransfuserConfig, name: str = 'ltf'):
         super().__init__()
         self._config = config
+        self._name = name
         self._transfuser_model = TransfuserModel(config)
         self._feature_builder = TransfuserFeatureBuilder(config)
 
     def load_checkpoint(self, checkpoint_path):
-        state_dict = load_checkpoint(checkpoint_path, 'ltf')
+        state_dict = load_checkpoint(checkpoint_path, self._name)
         result = self.load_state_dict({k.replace('agent.', ''): v for k, v in state_dict.items()})
-        print(f'[ltf] loaded {checkpoint_path}: {result}', flush=True)
+        print(f'[{self._name}] loaded {checkpoint_path}: {result}', flush=True)
 
     def forward(self, features):
         return self._transfuser_model(features)

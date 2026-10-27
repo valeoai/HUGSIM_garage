@@ -9,7 +9,7 @@ bring an environment of their own.
 |---|---|---|---|---|
 | `uniad` | UniAD (base, e2e) | `uniad/` | `_mmdet3d/pixi.toml` | no |
 | `vad` | VAD (base) | `vad/` | `_mmdet3d/pixi.toml` | no |
-| `ltf` | Latent TransFuser | `ltf/` | the simulator's | yes |
+| `ltf` | Latent TransFuser | `ltf/`, `_ltf/` | the simulator's | yes |
 | `drivor` | [DrivoR](https://github.com/valeoai/DrivoR) (4 cameras), with its default scorer weights | `drivor/` | the simulator's | yes |
 | `drivor_paper` | DrivoR as its paper evaluated it on HUGSIM | `drivor_paper/` | the simulator's | yes |
 | `toad` | [TOAD](https://github.com/valeoai/TOAD): DrivoR with CEM refinement, as released | `toad/` | the simulator's | yes |
@@ -19,6 +19,8 @@ bring an environment of their own.
 | `vavam` | [VaVAM](https://github.com/valeoai/VideoActionModel)-B (front camera, 2 Hz context), as its closed-loop client drives it | `_vavam/` | the simulator's, plus `mup` | yes |
 | `drivor_eco` | DrivoR (as `drivor`) + ECO, **our reimplementation**, with DrivoR's own headings | `drivor_eco/`, `_eco/` | the simulator's | yes |
 | `vavam_eco` | VaVAM-B + ECO (arXiv 2609.31383), **our reimplementation**: no ECO code is released | `_vavam/` | the simulator's, plus `mup` | yes |
+| `ltfv7` | LTFv7: Latent TransFuser trained with [BeyondDrive](https://github.com/wjl2244/BeyondDrive)'s hard negatives (arXiv 2605.19771), its released checkpoint | `ltfv7/`, `_ltf/` | the simulator's | yes |
+| `ltf_star` | LTF*: BeyondDrive's own Latent TransFuser baseline, trained as LTFv7 without hard negatives | `ltf_star/`, `_ltf/` | the simulator's | yes |
 
 UniAD and VAD are built from mmcv 1.x registries and call its compiled CUDA ops (deformable
 attention, DCNv2), so they keep that stack, in a pixi workspace of their own: see
@@ -28,7 +30,7 @@ pytorch_lightning), not for anything they compute; their folders hold their infe
 Every agent is a folder named like its `--ad` name and like its checkpoint folder
 `$HUGSIM_AGENT_CKPTS/<name>/`, with a `launch.sh` and a `NOTICE.md` (where each file came from). The code
 the NAVSIM-family agents share is in `_navsim/` (`NOTICE.md` there too; each agent's `spec.py` is what
-distinguishes it), the DrivoR model that `drivor`, `drivor_paper` and `toad` all build in `_drivor/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
+distinguishes it), the DrivoR model that `drivor`, `drivor_paper` and `toad` all build in `_drivor/`, the Latent TransFuser model of `ltf`, `ltfv7` and `ltf_star` in `_ltf/`, the mmdet3d environment and runner of UniAD and VAD in `_mmdet3d/`. No agent folder
 imports another, so deleting one leaves the rest working (`_navsim/LICENSE` is the Apache-2.0 text of the
 NAVSIM-family code).
 
@@ -121,6 +123,8 @@ every garage run has used), and links the files agents share (DrivoR's weights f
 | `vavam/VQ_ds16_16384_llamagen_encoder.jit` | VaVAM's image tokenizer, same release |
 | `vavam_eco/*` | the same two files as `vavam/` (links) |
 | `drivor_eco/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a link) |
+| `ltfv7/LTFv7-PDMS_89.841.ckpt` | LTFv7 from [wjl2244/BeyondDrive](https://github.com/wjl2244/BeyondDrive)'s README (Google Drive) |
+| `ltf_star/LTF_-PDMS_88.7.ckpt` | LTF* from the same README |
 
 The checkpoints carry their backbones' weights, so nothing else is downloaded at start-up (no
 DINOv2 or DD3D files, no Hugging Face fetch). A missing file stops the agent with the path it

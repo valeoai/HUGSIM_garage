@@ -2,7 +2,9 @@
 
 From NAVSIM (autonomousvision/navsim, Apache-2.0) ``navsim/agents/transfuser/transfuser_model.py``
 via hyzhou404/NAVSIM; ``StateSE2Index`` comes from the same repo's ``common/enums.py``, as plain
-constants. ``AgentHead`` of the same file is in ``agents/_navsim/agent_head.py``.
+constants. ``AgentHead`` of the same file is in ``agents/_navsim/agent_head.py``. The delta variant of
+``TrajectoryHead`` and ``cumsum_traj`` with its statistics are from BeyondDrive (wjl2244/BeyondDrive,
+Apache-2.0) ``navsim/agents/transfuser/transfuser_model.py`` and ``utils.py``.
 """
 
 from typing import Dict
@@ -18,6 +20,20 @@ from .config import TransfuserConfig
 # StateSE2Index: poses are (x, y, heading)
 STATE_SE2_SIZE = 3
 HEADING = 2
+
+# BeyondDrive's per-step displacement statistics (``utils.py``), which normalize its delta head's output.
+X_DIFF_MIN, X_DIFF_MAX, X_DIFF_MEAN = -1.2698211669921875, 7.475563049316406, 2.950225591659546
+Y_DIFF_MIN, Y_DIFF_MAX, Y_DIFF_MEAN = -5.012081146240234, 4.8563690185546875, 0.0607292577624321
+
+
+def cumsum_traj(norm_trajs):
+    """BeyondDrive's ``cumsum_traj``: rows (dx, dy, sin, cos), normalized, to poses (x, y, heading)."""
+    heading = torch.atan2(norm_trajs[..., 2:3], norm_trajs[..., 3:4])
+    x_diff_range = max(abs(X_DIFF_MAX - X_DIFF_MEAN), abs(X_DIFF_MIN - X_DIFF_MEAN))
+    x_diff = norm_trajs[..., 0:1] * x_diff_range + X_DIFF_MEAN
+    y_diff_range = max(abs(Y_DIFF_MAX - Y_DIFF_MEAN), abs(Y_DIFF_MIN - Y_DIFF_MEAN))
+    y_diff = norm_trajs[..., 1:2] * y_diff_range + Y_DIFF_MEAN
+    return torch.cat([x_diff.cumsum(dim=1), y_diff.cumsum(dim=1), heading], -1)
 
 
 class TransfuserModel(nn.Module):
@@ -90,6 +106,7 @@ class TransfuserModel(nn.Module):
             num_poses=config.trajectory_sampling.num_poses,
             d_ffn=config.tf_d_ffn,
             d_model=config.tf_d_model,
+            use_delta_traj=config.use_delta_traj,
         )
 
     def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -129,7 +146,7 @@ class TransfuserModel(nn.Module):
 class TrajectoryHead(nn.Module):
     """Trajectory prediction head."""
 
-    def __init__(self, num_poses: int, d_ffn: int, d_model: int):
+    def __init__(self, num_poses: int, d_ffn: int, d_model: int, use_delta_traj: bool = False):
         """
         Initializes trajectory head.
         :param num_poses: number of (x,y,θ) poses to predict
@@ -141,15 +158,26 @@ class TrajectoryHead(nn.Module):
         self._num_poses = num_poses
         self._d_model = d_model
         self._d_ffn = d_ffn
+        self._use_delta_traj = use_delta_traj
 
-        self._mlp = nn.Sequential(
-            nn.Linear(self._d_model, self._d_ffn),
-            nn.ReLU(),
-            nn.Linear(self._d_ffn, num_poses * STATE_SE2_SIZE),
-        )
+        if use_delta_traj:  # BeyondDrive: (dx, dy, sin, cos) per pose, through a d_model-wide SiLU layer
+            self._mlp = nn.Sequential(
+                nn.Linear(self._d_model, self._d_model),
+                nn.SiLU(),
+                nn.Linear(self._d_model, num_poses * (STATE_SE2_SIZE + 1)),
+            )
+        else:
+            self._mlp = nn.Sequential(
+                nn.Linear(self._d_model, self._d_ffn),
+                nn.ReLU(),
+                nn.Linear(self._d_ffn, num_poses * STATE_SE2_SIZE),
+            )
 
     def forward(self, object_queries) -> Dict[str, torch.Tensor]:
         """Torch module forward pass."""
+        if self._use_delta_traj:
+            delta = self._mlp(object_queries).reshape(-1, self._num_poses, STATE_SE2_SIZE + 1)
+            return {"trajectory": cumsum_traj(delta)}
         poses = self._mlp(object_queries).reshape(-1, self._num_poses, STATE_SE2_SIZE)
         poses[..., HEADING] = poses[..., HEADING].tanh() * np.pi
         return {"trajectory": poses}

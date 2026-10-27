@@ -31,6 +31,9 @@ GTRS = "https://huggingface.co/Zzxxxxxxxx/gtrs/resolve/main"
 ZTRS = "https://huggingface.co/Zzxxxxxxxx/ZTRS/resolve/main/ztrs_vov.ckpt"
 # NVlabs/GTRS at a fixed commit (its default branch is master), so the vocabulary cannot change under a run.
 VOCAB = "https://raw.githubusercontent.com/NVlabs/GTRS/92a740def80610e4096962d25cc837b21e72ef78/traj_final"
+# BeyondDrive's README (wjl2244/BeyondDrive, Google Drive): LTFv7 and its LTF* baseline.
+LTFV7 = "https://drive.usercontent.google.com/download?id=1ctVDgZf5yAr0oHiUKUe0CSOWWv3fRdZA&export=download&confirm=t"
+LTF_STAR = "https://drive.usercontent.google.com/download?id=1t49K8OJqI-DdPedEQ5q0Z2Mkf3Vcc5du&export=download&confirm=t"
 # VaVAM's v1.0.0 release (valeoai/VideoActionModel): VaVAM-B, the model the ECO paper drives, and its image tokenizer.
 VAVAM = "https://github.com/valeoai/VideoActionModel/releases/download/v1.0.0"
 
@@ -46,6 +49,8 @@ CHECKPOINTS = {
     "drivor_paper": [("drivor_paper/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "toad": [("toad/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "drivor_eco": [("drivor_eco/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
+    "ltfv7": [("ltfv7/LTFv7-PDMS_89.841.ckpt", LTFV7, "ae772b368376e137318d0027df75ed3d12349efb2dec9c1854003e43832d3da7")],
+    "ltf_star": [("ltf_star/LTF_-PDMS_88.7.ckpt", LTF_STAR, "a6d159ef4edd6f91faa63240fe786eb8513d79e3f2e10aedfe35a696104694f1")],
     "gtrs": [("gtrs/gtrs_dense_vov.ckpt", f"{GTRS}/gtrs_dense_vov.ckpt", "8bab5fb86fe9071365e53a18328d5fa1c91000515f9446bcb05eadc34ae5b95d"),
              ("gtrs/16384.npy", f"{VOCAB}/16384.npy", "e8c29cfc25add59ae8b64769a4554c6518878726178c0bd889fc8518ebe1261d")],
     "ztrs": [("ztrs/ztrs_vov.ckpt", ZTRS, "26d45c0efc47f1823896ed9fe909d84e3c1f483f56ee49274c09de0838fa3415"),

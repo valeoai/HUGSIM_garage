@@ -15,6 +15,9 @@ from .._navsim.common import TrajectorySampling
 @dataclass
 class TransfuserConfig:
     trajectory_sampling: TrajectorySampling = TrajectorySampling(time_horizon=4, interval_length=0.5)
+    # BeyondDrive's trajectory head (wjl2244/BeyondDrive, the LTFv7 and LTF* checkpoints): per-step
+    # normalized deltas and the heading's sine and cosine, summed into poses (model.py).
+    use_delta_traj: bool = False
 
     image_architecture: str = 'resnet34'
     lidar_architecture: str = 'resnet34'
