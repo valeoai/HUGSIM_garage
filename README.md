@@ -226,12 +226,26 @@ Two scores, for two questions:
 | `hdscore`, HUGSIM's HD-Score | each step's **planned** trajectory (NC, DAC, TTC, comfort on the agent's waypoints), times route completion | `eval.json`, written at the end of every episode unless `--skip-native-eval` is passed or HUGSIM's scorer fails on it (`get_score.py` averages them) |
 | the realized score, TerraTransfer's closed-loop HD-Score ([arXiv 2606.17386](https://arxiv.org/abs/2606.17386), App. B) | the **realized** trajectory: per 0.5 s keyframe NC and DAC at the ego's pose, TTC propagated 1 s ahead, comfort over the next 1 s | `realized_score.json` with `--realized_score`, or `score_realized.py` for past runs |
 
-`--before_fixes` drives and scores as HUGSIM did for published results such as the DrivoR paper's:
-#56 and #57 applied, none of this fork's later fixes that change a score. The tracker optimizes each
-command for the plan's 0.5 s spacing instead of the simulator's step, and `eval.json` judges each
-plan from the pose one step after it was made (the frames kept as `frames_before_fixes` in
-`data.pkl`), with the collision box from before #76. Use it to compare with those numbers; keep its
-episodes apart from others (`realized_score.json` records `"before_fixes": true`).
+`--as_drivor_paper` (earlier `--before_fixes`, still accepted) drives and scores as the HUGSIM the published results such as the DrivoR paper's were
+run on: upstream main (hyzhou404/HUGSIM `62c690d`, #56) with its PR #57, and none of this fork's later fixes
+that change an episode or a score. It restores, for each such fix, the upstream behaviour:
+
+| upstream behaviour restored | fork fix it undoes |
+|---|---|
+| the iLQR tracker optimizes each command for the plan's 0.5 s spacing, not the simulator's step | the controller-step fix |
+| the AttackPlanner on a fixed 0.1 s plan, one row per call, forecasts on the simulator's step, replanned on a step count: at dt 0.1 its actors move 2.5x the distance they cover at the shipped 0.25 s | 98ee0bf, 5105d46, 3b4f070 |
+| the episode capped at 400 steps (100 s at 0.25 s, 40 s at 0.1 s) | 8dda047, a50c161 |
+| `eval.json` judges each plan from the pose one step after it was made (the frames kept as `frames_before_fixes` in `data.pkl`), with the collision box from before #76 | the plan-pose and collision-box fixes |
+
+At the shipped dt 0.25 s the step-size fixes change nothing, so there only the tracker and `eval.json`
+differ from the default run. `--as_upstream` is `--as_drivor_paper` without #57, which upstream main still
+lacks: the tracker's reference headings computed with swapped `atan2` arguments (pi/2 minus the heading).
+It is the HUGSIM results such as TerraTransfer++'s (arXiv 2610.30319, at dt 0.1 s) were run on. Kept in
+both: the IDM lookahead fix (dd964ea) and the last pose's command (`dense_cam_poses`), whose upstream
+behaviour raises and loses the episode rather than driving it differently; the observation modes and the
+scene export, which only hand the agent information. `realized_score.json` records `"as_drivor_paper": true`
+(and `"as_upstream": true`; episodes run as `--before_fixes` say `"before_fixes": true`); keep these episodes in an output folder of their own. Validated against
+upstream checkouts: LTF on official436 reproduces their scores.
 
 `hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
 comparable with TerraTransfer, and with any agent that, like its jerk policy, has no

@@ -28,6 +28,9 @@ import numpy as np
 PLAN_TIMESTEP = 0.5
 #: Longest episode, in simulated seconds. 400 steps at the shipped dt = 0.25 s.
 EPISODE_SECONDS = 100.0
+# --as_drivor_paper (and --as_upstream): upstream HUGSIM's cap, a step count (its gymnasium registration's
+# TimeLimit): 100 s at the shipped dt 0.25 s, 40 s at dt 0.1.
+UPSTREAM_MAX_STEPS = 400
 #: Frame rate of a sparse video, in simulated time. The abstract modes render no camera to drive
 #: from, so each video frame is a Gaussian render made for the video alone.
 SPARSE_VIDEO_HZ = 2.0
@@ -155,7 +158,7 @@ def write_cloud(path, xyz):
 
 
 def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', realized_score=False, outputs='full',
-                   agent_name=None, before_fixes=False):
+                   agent_name=None, as_drivor_paper=False, as_upstream=False):
 
     env = gymnasium.make('hugsim_env/HUGSim-v0', cfg=cfg, output=output)
 
@@ -165,7 +168,9 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
     ad_crashed = False
     cnt = 0
     save_data = {'type': 'closeloop', 'frames': []}
-    if before_fixes:
+    if as_drivor_paper:
+        # Named after the flag's earlier name, --before_fixes: episodes already on disk carry this key,
+        # and score_calculator.py reads it to score them as their eval.json was.
         save_data['frames_before_fixes'] = []
 
     print('Ready for simulation')
@@ -234,9 +239,11 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                     'velo': override['velo'],
                     'steer': override['steer'],
                 }
-            elif before_fixes:
-                # As before the controller-step fix: the tracker at the plan's own 0.5 s spacing.
-                acc, steer_rate = traj2control(plan_traj, info)
+            elif as_drivor_paper:
+                # As before the controller-step fix: the tracker at the plan's own 0.5 s spacing;
+                # with --as_upstream also the reference headings as upstream main computes them (no #57).
+                heading_order = 'upstream' if as_upstream else 'fixed'
+                acc, steer_rate = traj2control(plan_traj, info, heading_order=heading_order)
                 action = {'acc': acc, 'steer_rate': steer_rate}
             else:
                 acc, steer_rate = traj2control(
@@ -251,14 +258,17 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
             # was 100 s, and a step-count cap silently shortens the episode when dt changes
             # (at dt = 0.1 s the same 400 steps is 40 s, so a route needing 60 s can never be
             # completed and route completion measures the cap rather than the agent).
-            done = terminated or truncated or cnt * cfg.kinematic.dt >= EPISODE_SECONDS
+            if as_drivor_paper:
+                done = terminated or truncated or cnt >= UPSTREAM_MAX_STEPS
+            else:
+                done = terminated or truncated or cnt * cfg.kinematic.dt >= EPISODE_SECONDS
 
             # Episode-level bookkeeping: 'rc' is the progress reached by executing this plan,
             # so it stays post-step (the scorer only takes its maximum over the episode).
             frame['collision'] = info['collision']
             frame['rc'] = info['rc']
             save_data['frames'].append(frame)
-            if before_fixes:
+            if as_drivor_paper:
                 # The frame HUGSIM's scorer judged before the fixes: the loop built it after
                 # env.step(), so the plan was anchored at the pose the step reached, with that
                 # step's vehicles and time.
@@ -325,7 +335,7 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
                 scene_xyz = np.asarray(o3d.io.read_point_cloud(os.path.join(output, 'scene.ply')).points)
             else:
                 ground_xyz, scene_xyz = clouds
-            if before_fixes:
+            if as_drivor_paper:
                 # HUGSIM's score as the DrivoR paper's results computed it: the frames above, and
                 # the collision box from before #76.
                 results = hugsim_evaluate([{**save_data, 'frames': save_data['frames_before_fixes']}],
@@ -354,8 +364,10 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         # Which --ad drove: a record is otherwise only labelled by its folder name, and the name
         # `drivor` meant TOAD before agents/toad existed (run_benchmark.py refuses those records).
         result["agent"] = agent_name
-        if before_fixes:
-            result["before_fixes"] = True  # eval.json is then HUGSIM's score before the fixes
+        if as_drivor_paper:
+            result["as_drivor_paper"] = True  # eval.json is then the DrivoR paper's HUGSIM score (episodes run as --before_fixes say "before_fixes")
+        if as_upstream:
+            result["as_upstream"] = True  # driven as upstream HUGSIM main drives (closed_loop.py --as_upstream)
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
@@ -455,13 +467,21 @@ if __name__ == "__main__":
              "still written, so the episode can be scored offline",
     )
     parser.add_argument(
-        "--before_fixes", action="store_true",
-        help="drive and score as HUGSIM did for published results such as the DrivoR paper's (#56 "
-             "and #57 applied, none of this fork's later fixes that change a score): the iLQR "
-             "tracker optimizes each command for the plan's 0.5 s spacing instead of the "
-             "simulator's step, and HUGSIM's score (eval.json) judges each plan from the pose one "
-             "step after it was made, with the collision box from before #76. The score of the "
-             "path driven is unchanged; realized_score.json records before_fixes.")
+        # --before_fixes is its earlier name, still accepted.
+        "--as_drivor_paper", "--before_fixes", dest="as_drivor_paper", action="store_true",
+        help="drive and score as the HUGSIM the published results such as the DrivoR paper's were run on: "
+             "upstream main (hyzhou404/HUGSIM 62c690d, #56) with its PR #57, and none of this fork's later "
+             "fixes that change an episode or a score. The iLQR tracker optimizes each command for the plan's "
+             "0.5 s spacing instead of the simulator's step; the AttackPlanner runs on a fixed 0.1 s plan with a "
+             "step-count replan (its actors move 2.5x farther at dt 0.1 than at 0.25); the episode is capped at "
+             "400 steps (40 s at dt 0.1); HUGSIM's score (eval.json) judges each plan from the pose one step "
+             "after it was made, with the collision box from before #76. At the shipped dt 0.25 s only the "
+             "tracker and eval.json differ from the default run. realized_score.json records as_drivor_paper.")
+    parser.add_argument(
+        "--as_upstream", action="store_true",
+        help="drive as upstream HUGSIM main (62c690d) does, for comparing with results run on it such as "
+             "TerraTransfer++'s: --as_drivor_paper without PR #57, i.e. the tracker's reference headings computed "
+             "with swapped atan2 arguments, as #57 is not merged there. realized_score.json records as_upstream.")
     parser.add_argument(
         "--deterministic_tracker",
         action="store_true",
@@ -484,10 +504,12 @@ if __name__ == "__main__":
              "The agent uses this process's GPU; --ad_cuda and --ad_path do not apply",
     )
     args = parser.parse_args()
-    if args.before_fixes and args.skip_native_eval:
+    if args.as_upstream:
+        args.as_drivor_paper = True  # --as_upstream includes it
+    if args.as_drivor_paper and args.skip_native_eval:
         # Only the episode's own scoring judges frames_before_fixes with the old box; the offline
         # scorers that --skip-native-eval leaves the score to are the fork's.
-        raise SystemExit("--before_fixes needs HUGSIM's own scorer: drop --skip-native-eval")
+        raise SystemExit("--as_drivor_paper (--before_fixes) needs HUGSIM's own scorer: drop --skip-native-eval")
     if args.deterministic_tracker:
         set_max_solve_time(None)
     if args.in_process and args.ad_path is not None:
@@ -600,6 +622,7 @@ if __name__ == "__main__":
     channels = (args.obs_channels or cfg.base.get(f'{args.ad}_obs_channels')
                 or (['rgb'] if launcher_in_repo else OBS_CHANNELS))
     cfg.base.obs_channels = [channels] if isinstance(channels, str) else list(channels)  # 'rgb' is ['rgb']
+    cfg.base.upstream_actors = bool(args.as_drivor_paper)  # read by HUGSimEnv for its planner (the AttackPlanner as upstream calls it)
 
     if args.in_process:
         try:
@@ -627,7 +650,7 @@ if __name__ == "__main__":
         try:
             create_gym_env(cfg, output, agent, skip_native_eval=args.skip_native_eval, video=video,
                            realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
-                           before_fixes=args.before_fixes)
+                           as_drivor_paper=args.as_drivor_paper, as_upstream=args.as_upstream)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -637,7 +660,7 @@ if __name__ == "__main__":
             create_gym_env(cfg, output, FifoAgent(output, process),
                            skip_native_eval=args.skip_native_eval, video=video,
                            realized_score=args.realized_score, outputs=args.outputs, agent_name=args.ad,
-                           before_fixes=args.before_fixes)
+                           as_drivor_paper=args.as_drivor_paper, as_upstream=args.as_upstream)
             check_alive(process)
         except Exception:
             import traceback

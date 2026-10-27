@@ -27,7 +27,7 @@ FAST_SCORING = True
 ego_verts_canonic = np.array([[0.5, 0.5, -1.0], [0.5, -0.5, -1.0], [0.5, 0.5, 0], [0.5, -0.5, 0],
                     [-0.5, -0.5, -1.0], [-0.5, 0.5, -1.0], [-0.5, -0.5, 0], [-0.5, 0.5, 0]])
 # The box before #76: from the camera plane up, over the 1.5 m above the car (above it, not around
-# it). closed_loop.py --before_fixes scores with it, as the HUGSIM results of that time were.
+# it). closed_loop.py --as_drivor_paper (earlier --before_fixes) scores with it, as the HUGSIM results of that time were.
 EGO_VERTS_BEFORE_FIXES = np.array([[0.5, 0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 1.0], [0.5, -0.5, 1.0],
                                    [-0.5, -0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, 1.0], [-0.5, 0.5, 1.0]])
 
@@ -679,7 +679,7 @@ if __name__ == "__main__":
     args = get_opts()
     data = parse_data(args.test_path)
     if 'frames_before_fixes' in data[0]:
-        # An episode run with closed_loop.py --before_fixes: score it as its eval.json was, its
+        # An episode run with closed_loop.py --as_drivor_paper (or --before_fixes): score it as its eval.json was, its
         # frames from before the fixes with the box from before #76.
         data[0]['frames'] = data[0]['frames_before_fixes']
         ego_verts_canonic = EGO_VERTS_BEFORE_FIXES
