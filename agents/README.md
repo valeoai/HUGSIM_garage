@@ -18,6 +18,7 @@ bring an environment of their own.
 | `gtrs_aug` | GTRS-Aug teacher (VoVNet, 8192 vocabulary) | `gtrs_aug/` | the simulator's | yes |
 | `vavam` | [VaVAM](https://github.com/valeoai/VideoActionModel)-B (front camera, 2 Hz context), as its closed-loop client drives it | `_vavam/` | the simulator's, plus `mup` | yes |
 | `drivor_eco` | DrivoR (as `drivor`) + ECO, **our reimplementation**, with DrivoR's own headings | `drivor_eco/`, `_eco/` | the simulator's | yes |
+| `ltfv6` | LTFv6: [LEAD](https://github.com/kesai-labs/lead)'s Latent TransFuser v6 (arXiv 2512.20563), its NAVSIM checkpoint (4 cameras, rear included) | `ltfv6/` | the simulator's | yes |
 | `vavam_eco` | VaVAM-B + ECO (arXiv 2609.31383), **our reimplementation**: no ECO code is released | `_vavam/` | the simulator's, plus `mup` | yes |
 
 UniAD and VAD are built from mmcv 1.x registries and call its compiled CUDA ops (deformable
@@ -121,6 +122,7 @@ every garage run has used), and links the files agents share (DrivoR's weights f
 | `vavam/VQ_ds16_16384_llamagen_encoder.jit` | VaVAM's image tokenizer, same release |
 | `vavam_eco/*` | the same two files as `vavam/` (links) |
 | `drivor_eco/drivor_Nav1_25epochs.pth` | the same file as `drivor/drivor_Nav1_25epochs.pth` (a link) |
+| `ltfv6/model_0060.pth`, `ltfv6/config.json` | [ln2697/ltfv6-navsim](https://huggingface.co/ln2697/ltfv6-navsim) at `d27ed76` (the model and the config it is built from) |
 
 The checkpoints carry their backbones' weights, so nothing else is downloaded at start-up (no
 DINOv2 or DD3D files, no Hugging Face fetch). A missing file stops the agent with the path it

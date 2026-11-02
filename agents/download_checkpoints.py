@@ -31,6 +31,8 @@ GTRS = "https://huggingface.co/Zzxxxxxxxx/gtrs/resolve/main"
 ZTRS = "https://huggingface.co/Zzxxxxxxxx/ZTRS/resolve/main/ztrs_vov.ckpt"
 # NVlabs/GTRS at a fixed commit (its default branch is master), so the vocabulary cannot change under a run.
 VOCAB = "https://raw.githubusercontent.com/NVlabs/GTRS/92a740def80610e4096962d25cc837b21e72ef78/traj_final"
+# LTFv6, the NAVSIM checkpoint of LEAD (kesai-labs/lead), at a fixed revision of its Hugging Face release.
+LTFV6 = "https://huggingface.co/ln2697/ltfv6-navsim/resolve/d27ed7658dce278acd452d928ba3cb7339cf2d35"
 # VaVAM's v1.0.0 release (valeoai/VideoActionModel): VaVAM-B, the model the ECO paper drives, and its image tokenizer.
 VAVAM = "https://github.com/valeoai/VideoActionModel/releases/download/v1.0.0"
 
@@ -46,6 +48,8 @@ CHECKPOINTS = {
     "drivor_paper": [("drivor_paper/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "toad": [("toad/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
     "drivor_eco": [("drivor_eco/drivor_Nav1_25epochs.pth", "=drivor/drivor_Nav1_25epochs.pth", None)],
+    "ltfv6": [("ltfv6/model_0060.pth", f"{LTFV6}/model_0060.pth", "81db6ef933e6be21a0f9b5e0eb44d29d4b55ab4baa48eeffc54322f022f9be53"),
+              ("ltfv6/config.json", f"{LTFV6}/config.json", "878db4826788d7d02f4d2c5c21371ba0e2f332b86304bd20d76e95449b23de5d")],
     "gtrs": [("gtrs/gtrs_dense_vov.ckpt", f"{GTRS}/gtrs_dense_vov.ckpt", "8bab5fb86fe9071365e53a18328d5fa1c91000515f9446bcb05eadc34ae5b95d"),
              ("gtrs/16384.npy", f"{VOCAB}/16384.npy", "e8c29cfc25add59ae8b64769a4554c6518878726178c0bd889fc8518ebe1261d")],
     "ztrs": [("ztrs/ztrs_vov.ckpt", ZTRS, "26d45c0efc47f1823896ed9fe909d84e3c1f483f56ee49274c09de0838fa3415"),
