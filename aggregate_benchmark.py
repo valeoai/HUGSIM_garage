@@ -33,6 +33,7 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sim.utils.unfixed_step import RECORD_KEY as UNFIXED_STEP_KEY  # noqa: E402
 from run_benchmark import pre_toad_drivor, refuse_pre_toad_drivor  # noqa: E402
 
 KEYS = ("hdscore", "hdscore_realized", "hdscore_realized_arclength")
@@ -87,6 +88,10 @@ def summarise(entries):
     for status in ("scored", "crashed", "too_short", "agent_died", "missing"):
         out[status] = sum(1 for _, s, _ in entries if s == status)
     out["gpu_crash"] = sum(1 for _, s, r in entries if s == "crashed" and r.get("gpu_crash"))
+    # Episodes run unfixed at a non-standard step (sim/utils/unfixed_step.py), and their steps.
+    unfixed = [r[UNFIXED_STEP_KEY] for _, _, r in entries if isinstance(r, dict) and r.get(UNFIXED_STEP_KEY) is not None]
+    out["unfixed_step"] = len(unfixed)
+    out["unfixed_step_dts"] = sorted(set(unfixed))
     counted = [(s, r) for _, s, r in entries if s != "missing"]
     for k in KEYS:
         vals = []
@@ -143,6 +148,11 @@ def main():
     for agent, s, missing in notes:
         if s["gpu_crash"]:
             print(f"note: {agent}: {s['gpu_crash']} episode(s) crashed of the GPU's memory on the last attempt (counted as 0)")
+        if s["unfixed_step"]:
+            steps = ", ".join(f"{dt:g}" for dt in s["unfixed_step_dts"])
+            print(f"WARNING: {agent}: {s['unfixed_step']} episode(s) run with --as_drivor_paper / --as_upstream at dt {steps} s, "
+                  f"where upstream HUGSIM's step-count bugs are live (sim/utils/unfixed_step.py): "
+                  f"NOT comparable with the standard benchmark or with any fixed run")
         if s["missing"] > 0:
             print(f"WARNING: {agent}: {s['missing']} episode(s) missing (no score, no sign of an agent death), "
                   f"left out of the means: " + ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else ""))

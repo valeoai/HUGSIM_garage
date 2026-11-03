@@ -100,11 +100,33 @@ def refuse_pre_toad_drivor(folders, out, set_name):
             "as README.md, *Results written before agents/toad*, describes")
 
 
+#: The kinematic config command() passes before the arguments after -- (which can replace it).
+DEFAULT_KINEMATIC = "configs/sim/kinematic.yaml"
+
+def unfixed_step(extra):
+    """The warning of sim/utils/unfixed_step.py for the closed_loop.py arguments after --, or None.
+
+    The step is the last --kinematic_path among them (closed_loop.py takes the last one), else command()'s default.
+    """
+    from sim.utils.unfixed_step import kinematic_dt, warning
+
+    kinematic = DEFAULT_KINEMATIC
+    for i, a in enumerate(extra):
+        if a == "--kinematic_path" and i + 1 < len(extra):
+            kinematic = extra[i + 1]
+        elif a.startswith("--kinematic_path="):
+            kinematic = a.split("=", 1)[1]
+    flags = {a.split("=", 1)[0] for a in extra}
+    return warning(kinematic_dt(os.path.join(REPO, kinematic)),
+                   as_drivor_paper=bool(flags & {"--as_drivor_paper", "--before_fixes"}),
+                   as_upstream="--as_upstream" in flags)
+
+
 def command(job, args):
     ds = job["dataset"]
     cmd = [args.python, "closed_loop.py", "--scenario_path", job["scenario"],
            "--base_path", f"configs/sim/{ds}_base.yaml", "--camera_path", f"configs/sim/{ds}_camera.yaml",
-           "--kinematic_path", "configs/sim/kinematic.yaml", "--ad", job["agent"], "--ad_cuda", "0",
+           "--kinematic_path", DEFAULT_KINEMATIC, "--ad", job["agent"], "--ad_cuda", "0",
            "--outputs", "scoring", "--realized_score", "--realized_score_arclength"] + args.extra
     if job["agent"] in IN_PROCESS and not args.no_in_process:
         cmd.append("--in_process")
@@ -282,6 +304,9 @@ def main():
     args = ap.parse_args()
     if not args.data or not args.out:
         raise SystemExit("set HUGSIM_DATA and HUGSIM_OUT (or pass --data / --out)")
+    risky = unfixed_step(args.extra)
+    if risky:
+        print(risky, file=sys.stderr, flush=True)  # once here; every episode's run.log repeats it
 
     all_jobs = jobs(args)
     refuse_pre_toad_drivor([j["episode"] for j in all_jobs if j["agent"] == "drivor" and pre_toad_drivor(read_record(j))],
