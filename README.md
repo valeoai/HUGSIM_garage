@@ -323,6 +323,35 @@ python run_benchmark.py --agents uniad vad ltf drivor toad gtrs ztrs gtrs_aug --
 python aggregate_benchmark.py --agents uniad vad ltf drivor toad gtrs ztrs gtrs_aug --set official436
 ```
 
+### Baseline results
+
+The agents of [`agents/`](agents/README.md) on `official436`, run with `run_benchmark.py` at HUGSIM's default
+step (0.25 s, `configs/sim/kinematic.yaml`), from their released checkpoints, with the simulator as of the
+attacker-reset fix (#18). Every agent has all 436 episodes, one run each; a crash counts 0. *Planned* is
+HUGSIM's `hdscore`, *realized* `hdscore_realized`, *arc length* `hdscore_realized_arclength` ([Scoring](#scoring));
+the level and dataset columns are the realized score over that subset (80 easy, 157 medium, 96 hard,
+103 extreme; 88 nuScenes, 127 PandaSet, 113 KITTI-360, 108 Waymo scenarios). The best value of each column is in bold.
+
+| `--ad` | planned | realized | arc length | easy | medium | hard | extreme | nuScenes | PandaSet | KITTI-360 | Waymo |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| `uniad` | 0.298 | 0.394 | 0.350 | 0.714 | 0.475 | 0.273 | 0.135 | 0.453 | 0.455 | 0.171 | **0.509** |
+| `vad` | 0.124 | 0.233 | 0.200 | 0.438 | 0.215 | 0.186 | 0.143 | 0.301 | 0.290 | 0.091 | 0.258 |
+| `ltf` | 0.209 | 0.306 | 0.268 | 0.603 | 0.276 | 0.198 | 0.222 | 0.410 | 0.396 | 0.130 | 0.299 |
+| `drivor` | 0.335 | 0.401 | 0.354 | 0.735 | 0.433 | 0.246 | **0.236** | 0.434 | 0.458 | 0.253 | 0.460 |
+| `drivor_paper` | 0.331 | 0.398 | 0.351 | 0.749 | 0.421 | 0.242 | **0.236** | 0.447 | 0.447 | 0.256 | 0.449 |
+| `toad` | **0.361** | 0.418 | **0.371** | 0.753 | **0.481** | 0.244 | 0.223 | 0.494 | **0.462** | 0.254 | 0.474 |
+| `gtrs` | 0.344 | 0.411 | 0.364 | 0.768 | 0.463 | 0.255 | 0.198 | **0.501** | 0.437 | 0.281 | 0.441 |
+| `ztrs` | 0.349 | **0.420** | 0.370 | **0.769** | 0.453 | **0.295** | 0.214 | 0.486 | 0.458 | **0.320** | 0.425 |
+| `gtrs_aug` | 0.289 | 0.361 | 0.317 | 0.732 | 0.355 | 0.216 | 0.218 | 0.442 | 0.427 | 0.238 | 0.347 |
+| `drivor_eco` | 0.329 | 0.392 | 0.347 | 0.732 | 0.425 | 0.226 | 0.233 | 0.430 | 0.446 | 0.224 | 0.474 |
+| `vavam` | 0.134 | 0.293 | 0.257 | 0.484 | 0.357 | 0.200 | 0.134 | 0.407 | 0.366 | 0.198 | 0.215 |
+| `vavam_eco` | 0.252 | 0.322 | 0.284 | 0.510 | 0.375 | 0.238 | 0.175 | 0.470 | 0.396 | 0.221 | 0.221 |
+
+`drivor_paper` is DrivoR with the scorer weights of its paper, `drivor` the same checkpoint with its default
+weights; `drivor_eco` and `vavam_eco` refine the plan with ECO as reimplemented here (no ECO code is
+released). The same agents at a 0.1 s step (`--kinematic_path configs/sim/kinematic_10hz.yaml`) score
+differently: compare agents only at one step.
+
 ### Results written before agents/toad
 
 Until `agents/drivor` and `agents/toad` were separated, `--ad drivor` ran DrivoR with CEM
