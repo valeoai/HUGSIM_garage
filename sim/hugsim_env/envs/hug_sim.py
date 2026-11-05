@@ -112,6 +112,13 @@ class HUGSimEnv(gymnasium.Env):
         self.obs_channels = (channels,) if isinstance(channels, str) else tuple(channels)  # 'rgb' is ('rgb',)
         if not self.obs_channels or not set(self.obs_channels) <= set(OBS_CHANNELS):
             raise ValueError(f"base.obs_channels is {list(self.obs_channels)}; expected a non-empty subset of {OBS_CHANNELS}")
+        # base.obs_photos (vector / raster modes, empty by default): the cameras whose RGB render is handed over
+        # beside the export, as obs['rgb'], for an agent that reads both (a photo student whose observation row
+        # is built from the export). The rgb mode already hands over every camera.
+        photos = cfg.base.get('obs_photos') or ()
+        self.obs_photos = (photos,) if isinstance(photos, str) else tuple(photos)
+        if self.obs_photos and self.obs_mode == 'rgb':
+            raise ValueError("base.obs_photos is for the vector and raster modes; the rgb mode renders every camera")
 
         plan_list = cfg.scenario.plan_list
         for control_param in plan_list:
@@ -194,8 +201,18 @@ class HUGSimEnv(gymnasium.Env):
                 "acc": spaces.Box(self.kinematic['min_acc'], self.kinematic['max_acc'], dtype=float)
             }
         )
-        # An abstract mode renders no camera, so its observation is empty and the agent reads info.
-        self.observation_space = spaces.Dict({}) if self.obs_mode != 'rgb' else spaces.Dict(
+        unknown = sorted(set(self.obs_photos) - set(self.cam_params))
+        if unknown:
+            raise ValueError(f"base.obs_photos names {unknown}; this scenario's cameras are {sorted(self.cam_params)}")
+        # An abstract mode renders no camera, so its observation is empty and the agent reads info
+        # (but for the base.obs_photos cameras' RGB).
+        self.observation_space = spaces.Dict({'rgb': spaces.Dict({
+            cam_name: spaces.Box(
+                low=0, high=255,
+                shape=(self.cam_params[cam_name]['intrinsic']['H'], self.cam_params[cam_name]['intrinsic']['W'], 3),
+                dtype=np.uint8,
+            ) for cam_name in self.obs_photos
+        })} if self.obs_photos else {}) if self.obs_mode != 'rgb' else spaces.Dict(
             {k: v for k, v in {
                 'rgb': spaces.Dict({
                     cam_name: spaces.Box(
@@ -491,7 +508,7 @@ class HUGSimEnv(gymnasium.Env):
 
     def _get_obs(self):
         if self.obs_mode != 'rgb':
-            return {}
+            return self.render_cameras(cam_names=self.obs_photos, channels=('rgb',)) if self.obs_photos else {}
         return self.render_cameras(channels=self.obs_channels)
 
     def render_cameras(self, cam_names=None, channels=OBS_CHANNELS):

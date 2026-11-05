@@ -184,9 +184,10 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
         if video != 'off' and cnt % stride == 0:
             # The rgb mode has usually just rendered the color images for the agent; the abstract
             # modes render nothing per step, and base.obs_channels may leave color out, so a frame
-            # is then rendered for the video alone.
+            # is then rendered for the video alone (also when base.obs_photos hands over only some cameras).
             observations_save.append(
-                obs['rgb'] if 'rgb' in obs else env.unwrapped.render_cameras(channels=('rgb',))['rgb']
+                obs['rgb'] if 'rgb' in obs and cfg.base.obs_mode == 'rgb'
+                else env.unwrapped.render_cameras(channels=('rgb',))['rgb']
             )
         infos_save.append(info)
 
@@ -448,6 +449,10 @@ if __name__ == "__main__":
              "Overrides base.<ad>_obs_channels; rgb alone for the agents under agents/, which read "
              "nothing else, and all three otherwise.")
     parser.add_argument(
+        '--obs_photos', nargs='+', default=None, metavar='CAM',
+        help="Vector and raster modes: also hand over these cameras' RGB render each step, as obs['rgb'], "
+             "for an agent that reads the export and photos both. Overrides base.<ad>_obs_photos; none by default.")
+    parser.add_argument(
         '--raster_view', default=None, choices=RASTER_VIEWS,
         help="Raster mode: the view the agent is asked to draw, perspective or top-down. "
              "Overrides base.<ad>_raster.view; pv by default.")
@@ -591,6 +596,10 @@ if __name__ == "__main__":
         cfg.base.raster = raster
     elif args.raster_view is not None or args.raster_rig is not None:
         raise SystemExit(f"--raster_view / --raster_rig need the raster mode; this run is {cfg.base.obs_mode}")
+    photos = args.obs_photos or cfg.base.get(f'{args.ad}_obs_photos') or []
+    cfg.base.obs_photos = [photos] if isinstance(photos, str) else list(photos)
+    if cfg.base.obs_photos and cfg.base.obs_mode == 'rgb':
+        raise SystemExit("--obs_photos is for the vector and raster modes; the rgb mode hands over every camera")
     video = args.video or ('off' if args.outputs == 'scoring' else 'full' if cfg.base.obs_mode == 'rgb' else 'sparse')
     cfg.base.write_point_clouds = args.outputs == 'full'
 
