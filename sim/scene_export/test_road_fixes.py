@@ -86,6 +86,17 @@ def test_a_cyclist_sized_obstacle_mid_road_gets_its_own_outline():
     assert ((np.abs(mids[:, 0] - 40.0) < 1.5) & (np.abs(mids[:, 1]) < 1.5)).sum() >= 3
 
 
+def test_an_obstacle_inside_a_fix_add_box_is_still_carved():
+    track, ground = _straight_road()
+    rng = np.random.default_rng(4)
+    bins = np.stack([rng.uniform(-6.0, -5.0, 200), rng.uniform(20.0, 22.0, 200)], 1)  # sim y 5..6, on a widened kerb
+    fix = {"note": "", "add": [np.array([[15.0, 3.0], [30.0, 3.0], [30.0, 8.0], [15.0, 8.0]])], "remove": []}
+    src = GroundTrajectoryMapSource(track, ground_ab=ground, road_fix=fix, obstacle_ab=bins)
+    mask, lo = src._drivable_mask()
+    at = lambda a, b: mask[int((a - lo[0]) // src.cell_m), int((b - lo[1]) // src.cell_m)]
+    assert at(-7.0, 25.0) and not at(-5.5, 21.0)
+
+
 def test_obstacle_points_keep_car_height_and_drop_vehicles():
     from sim.scene_export.map_source import obstacle_points
     xyz = np.array([[0.0, -0.5, 1.0], [0.0, -3.0, 2.0], [0.0, -0.5, 3.0], [0.0, -0.5, 4.0]])  # world, y down
@@ -113,7 +124,8 @@ if __name__ == "__main__":
     test_fill_takes_the_side_street_shape_from_the_gaussians()
     test_obstacles_at_car_height_are_carved_out_and_specks_are_not()
     test_a_cyclist_sized_obstacle_mid_road_gets_its_own_outline()
+    test_an_obstacle_inside_a_fix_add_box_is_still_carved()
     test_obstacle_points_keep_car_height_and_drop_vehicles()
     test_no_fix_file_is_none_and_digest_is_empty(pathlib.Path(tempfile.mkdtemp()))
     test_digest_follows_the_polygons()
-    print("8 passed")
+    print("9 passed")

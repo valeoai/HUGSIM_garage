@@ -506,6 +506,17 @@ class GroundTrajectoryMapSource(MapSource):
         mask = ndimage.binary_fill_holes(mask)
         if core is not None:
             mask = self._stamp_end_strips(mask, lo, track, core)
+        # A reviewed scene's hand correction goes in next, then the obstacle carve, so both are what
+        # the component test, the outline and the lane lines see.
+        fill_votes = None
+        if self.road_fix is not None and self.road_fix.get("fill") and self.fill_road_ab is not None:
+            empty = np.zeros((0, 2))
+            fill_votes = (vote(self.fill_road_ab), vote(self.fill_kerb_ab if self.fill_kerb_ab is not None else empty))
+        mask, added = road_fixes.apply(
+            mask, lo, self.cell_m, self.road_fix, fill_votes=fill_votes, close_cells=radius
+        )
+        # The obstacles win over a hand fix too: a fill box drawn over a kerb with bins on it must not
+        # hand the raster back road where HUGSIM counts a collision.
         if self.obstacle_ab is not None and self.obstacle_ab.shape[0]:
             n = max(1, int(round(OBSTACLE_WINDOW_M / self.cell_m)))
             density = ndimage.uniform_filter(vote(self.obstacle_ab).astype(np.float64), size=n, mode="constant") / self.cell_m ** 2
@@ -517,17 +528,10 @@ class GroundTrajectoryMapSource(MapSource):
                 big[0] = False
                 carved = big[lab] & mask
                 mask &= ~big[lab]
+                if added is not None:
+                    added &= ~big[lab]
                 # remembered for build(): where the road evidence said drivable and HUGSIM has an obstacle
                 self._carved = (carved, lo)
-        # A reviewed scene's hand correction goes in last, so it is what the component test,
-        # the outline and the lane lines all see.
-        fill_votes = None
-        if self.road_fix is not None and self.road_fix.get("fill") and self.fill_road_ab is not None:
-            empty = np.zeros((0, 2))
-            fill_votes = (vote(self.fill_road_ab), vote(self.fill_kerb_ab if self.fill_kerb_ab is not None else empty))
-        mask, added = road_fixes.apply(
-            mask, lo, self.cell_m, self.road_fix, fill_votes=fill_votes, close_cells=radius
-        )
 
         track_idx = np.floor((track - lo) / self.cell_m).astype(int)
         track_idx = track_idx[
