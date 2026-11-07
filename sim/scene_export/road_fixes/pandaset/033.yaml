@@ -1,0 +1,3 @@
+note: 'start junction: north street a spike, south street closed off'
+fill:
+  - [[-16, -22], [6, -22], [6, 26], [-16, 26]]

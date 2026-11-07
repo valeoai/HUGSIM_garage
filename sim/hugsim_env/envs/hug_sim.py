@@ -21,6 +21,7 @@ from sim.scene_export import (
     sidecar,
 )
 import sim.scene_export.map_source as scene_export_map_source
+from sim.scene_export import road_fixes as scene_export_road_fixes
 import sim.scene_export.static_agents as scene_export_static_agents
 from omegaconf import OmegaConf
 import math
@@ -286,6 +287,9 @@ class HUGSimEnv(gymnasium.Env):
             # derived once and cached beside it. The fingerprint covers every constant that
             # steers them, so retuning any of these invalidates the sidecar rather than
             # quietly serving what the previous tuning produced.
+            road_fix = scene_export_road_fixes.load(cfg.model_path)
+            if road_fix is not None:
+                print(f'[scene_export] road fix: {scene_export_road_fixes.fix_path(cfg.model_path)} ({road_fix["note"]})')
             digest = sidecar.fingerprint(
                 cfg.scenario.scene_name,
                 scene_export_hd_map,
@@ -294,6 +298,8 @@ class HUGSimEnv(gymnasium.Env):
                 sweep=self.ROAD_SWEEP,
                 map_source=scene_export_map_source.tunables(),
                 static_agents=scene_export_static_agents.tunables(),
+                # only when there is one, so the unfixed scenes keep their sidecars
+                **({'road_fix': scene_export_road_fixes.digest(road_fix)} if road_fix is not None else {}),
             )
             cached = sidecar.load(cfg.model_path, cfg.scenario.scene_name, digest)
             if cached is not None:
@@ -303,9 +309,16 @@ class HUGSimEnv(gymnasium.Env):
                 print(f'[scene_export] sidecar hit ({how}): {cached["path"]}')
             else:
                 road_ab, nonroad_ab = self._render_road_evidence()
+                kerb_xyz = None
+                if road_fix is not None and road_fix.get('fill'):
+                    # the fix's `fill` boxes are decided by the Gaussians: road against sidewalk/terrain
+                    # (its own argmax: `semantic_idx` here is the visible-only one, not the full set's)
+                    full_sem = torch.argmax(self.gaussians.get_full_3D_features, dim=-1)
+                    kerb = torch.isin(full_sem, torch.tensor(SCENE_EXPORT_KERB_CLASSES, device=full_sem.device))
+                    kerb_xyz = self.gaussians.get_full_xyz[kerb].detach().cpu().numpy()
                 map_source = build_map_source(
                     cfg, unified_map if scene_export_hd_map else None, cam_poses,
-                    ground_xyz=ground_xyz, road_ab=road_ab, nonroad_ab=nonroad_ab,
+                    ground_xyz=ground_xyz, road_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix, kerb_xyz=kerb_xyz,
                 )
                 self.scene_export_map = map_source.build(self.sim_ground_height)
                 # Vehicles that are part of the static reconstruction rather than the

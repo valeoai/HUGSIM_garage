@@ -27,6 +27,8 @@ Three frames meet here, so they are named throughout:
 
 import numpy as np
 
+from sim.scene_export import road_fixes
+
 # The drawable road classes (datatypes.h, ROAD_CLASS_*). The values are the
 # `type_code` the renderer reads out of the road entity, so they are not ours to renumber.
 ROAD_CLASS_LANE = 0
@@ -74,7 +76,10 @@ def tunables():
     defaults = {
         name: param.default
         for name, param in inspect.signature(GroundTrajectoryMapSource.__init__).parameters.items()
+        # the road fix and its Gaussian evidence are per scene, not a tuning; the sidecar hashes
+        # the fix separately and only for the scenes that have one
         if param.default is not inspect.Parameter.empty
+        and name not in ("road_fix", "fill_road_ab", "fill_kerb_ab")
     }
     return {
         "resample_step_m": RESAMPLE_STEP_M,
@@ -336,6 +341,9 @@ class GroundTrajectoryMapSource(MapSource):
         simplify_m=1.5,
         smooth_m=6.0,
         max_half_width_m=20.0,
+        road_fix=None,
+        fill_road_ab=None,
+        fill_kerb_ab=None,
     ):
         """
         Args:
@@ -363,6 +371,9 @@ class GroundTrajectoryMapSource(MapSource):
                 boundary; swept over two scenes, it drops the median direction change between
                 neighbouring edge segments from 25 degrees to 0.
             max_half_width_m: how far the width probe looks before giving up.
+            road_fix: the scene's hand correction (:func:`road_fixes.load`), or None.
+            fill_road_ab, fill_kerb_ab: planner-frame road- and sidewalk/terrain-labelled
+                Gaussians, which decide the drivable cells inside the fix's ``fill`` polygons.
         """
         self.trajectory_ab = _finite_rows(np.asarray(trajectory_ab, dtype=np.float64))
         # A scene model can carry a handful of diverged Gaussians -- four out of half a
@@ -377,6 +388,9 @@ class GroundTrajectoryMapSource(MapSource):
         self.simplify_m = float(simplify_m)
         self.smooth_m = float(smooth_m)
         self.max_half_width_m = float(max_half_width_m)
+        self.road_fix = road_fix
+        self.fill_road_ab = None if fill_road_ab is None else _finite_rows(np.asarray(fill_road_ab, dtype=np.float64))
+        self.fill_kerb_ab = None if fill_kerb_ab is None else _finite_rows(np.asarray(fill_kerb_ab, dtype=np.float64))
 
     @staticmethod
     def _frenet_frame(centerline):
@@ -409,8 +423,12 @@ class GroundTrajectoryMapSource(MapSource):
         if track is None:
             track = self.trajectory_ab
         margin = self.close_m + 2.0 * self.cell_m + self.default_half_width_m
-        lo = np.minimum(self.ground_ab.min(axis=0), track.min(axis=0)) - margin
-        hi = np.maximum(self.ground_ab.max(axis=0), track.max(axis=0)) + margin
+        extent = [self.ground_ab, track]
+        if self.road_fix is not None:
+            # an added side street may reach past every road sample, so the grid must hold it
+            extent += [road_fixes.sim_to_planner(p) for p in self.road_fix.get("add", []) + (self.road_fix.get("fill") or [])]
+        lo = np.min([e.min(axis=0) for e in extent], axis=0) - margin
+        hi = np.max([e.max(axis=0) for e in extent], axis=0) + margin
         shape = np.ceil((hi - lo) / self.cell_m).astype(int) + 1
         if shape.max() > 4000 or shape.min() < 2:
             return None
@@ -454,6 +472,15 @@ class GroundTrajectoryMapSource(MapSource):
         mask = ndimage.binary_fill_holes(mask)
         if core is not None:
             mask = self._stamp_end_strips(mask, lo, track, core)
+        # A reviewed scene's hand correction goes in last, so it is what the component test,
+        # the outline and the lane lines all see.
+        fill_votes = None
+        if self.road_fix is not None and self.road_fix.get("fill") and self.fill_road_ab is not None:
+            empty = np.zeros((0, 2))
+            fill_votes = (vote(self.fill_road_ab), vote(self.fill_kerb_ab if self.fill_kerb_ab is not None else empty))
+        mask, added = road_fixes.apply(
+            mask, lo, self.cell_m, self.road_fix, fill_votes=fill_votes, close_cells=radius
+        )
 
         track_idx = np.floor((track - lo) / self.cell_m).astype(int)
         track_idx = track_idx[
@@ -470,8 +497,11 @@ class GroundTrajectoryMapSource(MapSource):
         on_track = on_track[on_track > 0]
         if not on_track.size:
             return None
-        keep = np.bincount(on_track).argmax()
-        return labels == keep, lo
+        keep = [np.bincount(on_track).argmax()]
+        if added is not None:
+            # regions a fix added are road even across a median from the drive
+            keep += [k for k in np.unique(labels[added]) if k > 0]
+        return np.isin(labels, keep), lo
 
     def _stamp_end_strips(self, mask, origin, track, core):
         """Mark a road strip along each unobserved end of the drive (see ``END_EXTENSION_M``).
@@ -622,7 +652,8 @@ class GroundTrajectoryMapSource(MapSource):
         return np.vstack(out)
 
 
-def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None, nonroad_ab=None):
+def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None, nonroad_ab=None, road_fix=None,
+                     kerb_xyz=None):
     """Pick a map source for a scene.
 
     The HD map wins where the scenario asked for one and it loaded; otherwise the recorded
@@ -638,6 +669,8 @@ def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None,
             None. Preferred over ``ground_xyz`` when present: it describes the surface the
             renderer shows rather than the primitives it is built from.
         nonroad_ab: ``(P, 2)`` the same for sidewalk and terrain, used to place the kerb.
+        road_fix: the scene's hand correction (:mod:`road_fixes`), or None. Ignored by the HD map.
+        kerb_xyz: ``(K, 3)`` world-frame sidewalk/terrain Gaussians, for the fix's ``fill``.
 
     Returns:
         A :class:`MapSource`.
@@ -649,12 +682,19 @@ def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None,
         print("[scene_export] map source: trajdata HD map")
         return TrajdataMapSource(unified_map, trajectory_ab)
 
+    fill = {}
+    if road_fix is not None and road_fix.get("fill"):
+        to_ab = lambda xyz: None if xyz is None or not len(xyz) else np.stack([xyz[:, 0], xyz[:, 2]], axis=1)  # noqa: E731
+        fill = {"fill_road_ab": to_ab(ground_xyz), "fill_kerb_ab": to_ab(kerb_xyz)}
+
     if road_ab is not None and len(road_ab) >= MIN_RENDERED_ROAD_POINTS:
         print(
             f"[scene_export] map source: recorded drive + rendered road "
             f"({len(road_ab)} road px, {0 if nonroad_ab is None else len(nonroad_ab)} kerb px)"
         )
-        return GroundTrajectoryMapSource(trajectory_ab, ground_ab=road_ab, nonroad_ab=nonroad_ab)
+        return GroundTrajectoryMapSource(
+            trajectory_ab, ground_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix, **fill
+        )
 
     ground_ab = None
     if ground_xyz is not None and len(ground_xyz):
@@ -663,4 +703,4 @@ def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None,
         "[scene_export] map source: recorded drive"
         + (" + ground Gaussians" if ground_ab is not None else " (fixed-width corridor)")
     )
-    return GroundTrajectoryMapSource(trajectory_ab, ground_ab=ground_ab)
+    return GroundTrajectoryMapSource(trajectory_ab, ground_ab=ground_ab, road_fix=road_fix, **fill)
