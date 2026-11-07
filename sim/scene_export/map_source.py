@@ -65,6 +65,33 @@ END_EXTENSION_M = 30.0
 END_PROBE_M = 10.0
 
 
+# The drivable area is road evidence -- what the cameras label road -- but HUGSIM ends an episode
+# on its own collision set: the scene Gaussians that are neither road, sidewalk nor sky
+# (HUGSimEnv.points, bg_collision_det). Where the two disagree the raster shows road that HUGSIM
+# scores as a crash: a grass traffic island the hole filling closed over (nuScenes scene-0013), bins
+# and a hedge on the kerb the road outline runs past (0411, 0418), a cyclist smeared into the static
+# scene mid-lane (kitti360 4480_4680). So cells holding those Gaussians at car height are carved
+# out of the drivable area. Vehicles are left in: they are exported as boxes, not as road holes.
+OBSTACLE_EXCLUDED_CLASSES = (13, 14, 15, 16)
+OBSTACLE_HEIGHT_M = (0.05, 1.8)        # above the road surface: the ego box's span, not the canopy over it
+# Density, not a per-cell count: HUGSIM ends an episode on > 100 collision Gaussians anywhere in the
+# ego box (~8 m2, ~12 per m2), and the fences, hedges and smears it stops on are that sparse. A cell
+# is an obstacle when the 1 m window around it holds this many per m2, a little below that bar.
+OBSTACLE_MIN_PER_M2 = 8.0
+OBSTACLE_WINDOW_M = 1.0
+OBSTACLE_MIN_AREA_M2 = 0.25            # smaller blobs are floaters, not something the road stops at
+# The road outline is smoothed over smooth_m and simplified to simplify_m, which erases a 1.5 m hole
+# (a cyclist) and flattens a 1 m notch (bins on the kerb). The carved obstacles are traced on their
+# own, this finely, so the raster draws an edge where HUGSIM counts a collision.
+OBSTACLE_OUTLINE_SMOOTH_M = 0.75
+OBSTACLE_OUTLINE_SIMPLIFY_M = 0.4
+# Only obstacles this close to the drive line get the fine outline: the road block is capped at
+# MAX_ROAD_ENTITIES (512) segments a step, nearest first, and outlining every hedge along a street
+# pushes the far road ahead out of it. Every collision found was within 1.5 m of the drive line; a
+# traffic island at a junction within 6 m. Farther obstacles are still carved, outlined coarsely.
+OBSTACLE_OUTLINE_REACH_M = 6.0
+
+
 def tunables():
     """Every constant that steers the map build, for the sidecar's fingerprint.
 
@@ -79,7 +106,7 @@ def tunables():
         # the road fix and its Gaussian evidence are per scene, not a tuning; the sidecar hashes
         # the fix separately and only for the scenes that have one
         if param.default is not inspect.Parameter.empty
-        and name not in ("road_fix", "fill_road_ab", "fill_kerb_ab")
+        and name not in ("road_fix", "fill_road_ab", "fill_kerb_ab", "obstacle_ab")
     }
     return {
         "resample_step_m": RESAMPLE_STEP_M,
@@ -87,6 +114,8 @@ def tunables():
         "min_rendered_road_points": MIN_RENDERED_ROAD_POINTS,
         "end_extension_m": END_EXTENSION_M,
         "end_probe_m": END_PROBE_M,
+        "obstacle_carve": (OBSTACLE_EXCLUDED_CLASSES, OBSTACLE_HEIGHT_M, OBSTACLE_MIN_PER_M2, OBSTACLE_WINDOW_M, OBSTACLE_MIN_AREA_M2,
+                           OBSTACLE_OUTLINE_SMOOTH_M, OBSTACLE_OUTLINE_SIMPLIFY_M, OBSTACLE_OUTLINE_REACH_M),
         "ground_source": sorted(defaults.items()),
     }
 
@@ -344,6 +373,7 @@ class GroundTrajectoryMapSource(MapSource):
         road_fix=None,
         fill_road_ab=None,
         fill_kerb_ab=None,
+        obstacle_ab=None,
     ):
         """
         Args:
@@ -374,6 +404,9 @@ class GroundTrajectoryMapSource(MapSource):
             road_fix: the scene's hand correction (:func:`road_fixes.load`), or None.
             fill_road_ab, fill_kerb_ab: planner-frame road- and sidewalk/terrain-labelled
                 Gaussians, which decide the drivable cells inside the fix's ``fill`` polygons.
+            obstacle_ab: planner-frame positions of HUGSIM's collision Gaussians at car height
+                (see ``OBSTACLE_*``; :func:`obstacle_points` selects them), carved out of the
+                drivable area. None leaves the area as the road evidence gives it.
         """
         self.trajectory_ab = _finite_rows(np.asarray(trajectory_ab, dtype=np.float64))
         # A scene model can carry a handful of diverged Gaussians -- four out of half a
@@ -389,6 +422,7 @@ class GroundTrajectoryMapSource(MapSource):
         self.smooth_m = float(smooth_m)
         self.max_half_width_m = float(max_half_width_m)
         self.road_fix = road_fix
+        self.obstacle_ab = None if obstacle_ab is None else _finite_rows(np.asarray(obstacle_ab, dtype=np.float64))
         self.fill_road_ab = None if fill_road_ab is None else _finite_rows(np.asarray(fill_road_ab, dtype=np.float64))
         self.fill_kerb_ab = None if fill_kerb_ab is None else _finite_rows(np.asarray(fill_kerb_ab, dtype=np.float64))
 
@@ -472,6 +506,19 @@ class GroundTrajectoryMapSource(MapSource):
         mask = ndimage.binary_fill_holes(mask)
         if core is not None:
             mask = self._stamp_end_strips(mask, lo, track, core)
+        if self.obstacle_ab is not None and self.obstacle_ab.shape[0]:
+            n = max(1, int(round(OBSTACLE_WINDOW_M / self.cell_m)))
+            density = ndimage.uniform_filter(vote(self.obstacle_ab).astype(np.float64), size=n, mode="constant") / self.cell_m ** 2
+            occupied = density >= OBSTACLE_MIN_PER_M2
+            lab, count = ndimage.label(occupied)
+            if count:
+                sizes = np.bincount(lab.ravel())
+                big = sizes * self.cell_m ** 2 >= OBSTACLE_MIN_AREA_M2
+                big[0] = False
+                carved = big[lab] & mask
+                mask &= ~big[lab]
+                # remembered for build(): where the road evidence said drivable and HUGSIM has an obstacle
+                self._carved = (carved, lo)
         # A reviewed scene's hand correction goes in last, so it is what the component test,
         # the outline and the lane lines all see.
         fill_votes = None
@@ -542,17 +589,19 @@ class GroundTrajectoryMapSource(MapSource):
             stamped[cell[ok, 0], cell[ok, 1]] = True
         return stamped
 
-    def _outline_segments(self, mask, origin, height_fn):
+    def _outline_segments(self, mask, origin, height_fn, smooth_m=None, simplify_m=None, min_points=8):
         """Trace the drivable mask's boundary into ``EDGE`` segment rows."""
         from skimage.measure import approximate_polygon, find_contours
 
         out = []
-        window = max(3, int(round(self.smooth_m / self.cell_m)))
+        smooth_m = self.smooth_m if smooth_m is None else smooth_m
+        simplify_m = self.simplify_m if simplify_m is None else simplify_m
+        window = max(3, int(round(smooth_m / self.cell_m)))
         for contour in find_contours(mask.astype(float), 0.5):
-            if contour.shape[0] < 8:
+            if contour.shape[0] < min_points:
                 continue
             simplified = approximate_polygon(
-                _smooth_closed(contour, window), tolerance=self.simplify_m / self.cell_m
+                _smooth_closed(contour, window), tolerance=simplify_m / self.cell_m
             )
             if simplified.shape[0] < 3:
                 continue
@@ -645,6 +694,20 @@ class GroundTrajectoryMapSource(MapSource):
             left_w, right_w = self._probe_half_widths(mask, origin, centerline, normal)
             out += self._lane_lines(centerline, normal, left_w, right_w, height_fn)
             out += self._outline_segments(mask, origin, height_fn)
+            carved = getattr(self, "_carved", None)
+            if carved is not None and carved[0].any():
+                # obstacles inside the road, outlined finely; padded so a blob on the grid border closes
+                cmask, corigin = carved
+                from scipy import ndimage
+                near = np.ones(cmask.shape, dtype=bool)
+                idx = np.floor((centerline - corigin) / self.cell_m).astype(int)
+                ok = (idx >= 0).all(axis=1) & (idx[:, 0] < cmask.shape[0]) & (idx[:, 1] < cmask.shape[1])
+                near[idx[ok, 0], idx[ok, 1]] = False
+                cmask = cmask & (ndimage.distance_transform_edt(near) * self.cell_m <= OBSTACLE_OUTLINE_REACH_M)
+                out += self._outline_segments(
+                    np.pad(cmask, 1), corigin - self.cell_m, height_fn,
+                    smooth_m=OBSTACLE_OUTLINE_SMOOTH_M, simplify_m=OBSTACLE_OUTLINE_SIMPLIFY_M, min_points=4,
+                )
 
         out = [s for s in out if s.shape[0]]
         if not out:
@@ -652,8 +715,28 @@ class GroundTrajectoryMapSource(MapSource):
         return np.vstack(out)
 
 
+def obstacle_points(xyz_world, semantic, opacity, height_fn):
+    """Planner ``(a, b)`` of HUGSIM's collision Gaussians that stand at car height above the road.
+
+    ``xyz_world``, ``semantic``, ``opacity``: the scene Gaussians HUGSimEnv builds ``points`` from;
+    the same mask (semantic > 1, != 10, opacity > 0.8) minus ``OBSTACLE_EXCLUDED_CLASSES``.
+    ``height_fn``: planner ``(a, b)`` -> road surface z in the sim frame (``sim_ground_height``).
+    """
+    xyz = np.asarray(xyz_world, dtype=np.float64); sem = np.asarray(semantic).reshape(-1)
+    op = np.asarray(opacity, dtype=np.float64).reshape(-1)
+    keep = (sem > 1) & (sem != 10) & (op > 0.8) & ~np.isin(sem, OBSTACLE_EXCLUDED_CLASSES) & np.isfinite(xyz).all(axis=1)
+    xyz = xyz[keep]
+    if not xyz.shape[0]:
+        return np.zeros((0, 2))
+    a, b = xyz[:, 0], xyz[:, 2]
+    dz = -xyz[:, 1] - np.asarray(height_fn(a, b), dtype=np.float64)
+    lo, hi = OBSTACLE_HEIGHT_M
+    band = (dz >= lo) & (dz <= hi)
+    return np.stack([a[band], b[band]], axis=1)
+
+
 def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None, nonroad_ab=None, road_fix=None,
-                     kerb_xyz=None):
+                     kerb_xyz=None, obstacle_ab=None):
     """Pick a map source for a scene.
 
     The HD map wins where the scenario asked for one and it loaded; otherwise the recorded
@@ -671,6 +754,7 @@ def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None,
         nonroad_ab: ``(P, 2)`` the same for sidewalk and terrain, used to place the kerb.
         road_fix: the scene's hand correction (:mod:`road_fixes`), or None. Ignored by the HD map.
         kerb_xyz: ``(K, 3)`` world-frame sidewalk/terrain Gaussians, for the fix's ``fill``.
+        obstacle_ab: :func:`obstacle_points`, carved out of the drivable area. Ignored by the HD map.
 
     Returns:
         A :class:`MapSource`.
@@ -693,7 +777,7 @@ def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None,
             f"({len(road_ab)} road px, {0 if nonroad_ab is None else len(nonroad_ab)} kerb px)"
         )
         return GroundTrajectoryMapSource(
-            trajectory_ab, ground_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix, **fill
+            trajectory_ab, ground_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix, obstacle_ab=obstacle_ab, **fill
         )
 
     ground_ab = None
@@ -703,4 +787,4 @@ def build_map_source(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None,
         "[scene_export] map source: recorded drive"
         + (" + ground Gaussians" if ground_ab is not None else " (fixed-width corridor)")
     )
-    return GroundTrajectoryMapSource(trajectory_ab, ground_ab=ground_ab, road_fix=road_fix, **fill)
+    return GroundTrajectoryMapSource(trajectory_ab, ground_ab=ground_ab, road_fix=road_fix, obstacle_ab=obstacle_ab, **fill)

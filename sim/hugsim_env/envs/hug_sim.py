@@ -309,6 +309,14 @@ class HUGSimEnv(gymnasium.Env):
                 print(f'[scene_export] sidecar hit ({how}): {cached["path"]}')
             else:
                 road_ab, nonroad_ab = self._render_road_evidence()
+                # HUGSIM's own collision obstacles (the self.points mask) at car height, carved out of the
+                # drivable area so the raster's road ends where bg_collision_det starts counting
+                obstacle_ab = scene_export_map_source.obstacle_points(
+                    self.gaussians.get_xyz.detach().cpu().numpy(),
+                    torch.argmax(self.gaussians.get_3D_features, dim=-1).detach().cpu().numpy(),
+                    self.gaussians.get_opacity[:, 0].detach().cpu().numpy(),
+                    self.sim_ground_height,
+                )
                 kerb_xyz = None
                 if road_fix is not None and road_fix.get('fill'):
                     # the fix's `fill` boxes are decided by the Gaussians: road against sidewalk/terrain
@@ -319,6 +327,7 @@ class HUGSimEnv(gymnasium.Env):
                 map_source = build_map_source(
                     cfg, unified_map if scene_export_hd_map else None, cam_poses,
                     ground_xyz=ground_xyz, road_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix, kerb_xyz=kerb_xyz,
+                    obstacle_ab=obstacle_ab,
                 )
                 self.scene_export_map = map_source.build(self.sim_ground_height)
                 # Vehicles that are part of the static reconstruction rather than the
