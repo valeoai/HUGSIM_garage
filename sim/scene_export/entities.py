@@ -210,6 +210,37 @@ def roads_to_ego(
     return clipped.astype(np.float32)
 
 
+def asset_extent_wlh(xyz, opacity, min_opacity=0.8, quantile=1.0, ground_band_m=0.4, min_points=100):
+    """``[w, l, h]`` of an actor as its Gaussians render it, in m, or None for too few points.
+
+    The scenario's actors are 3DRealCar Gaussian models, sized in HUGSIM by their ``wlh.json``. That box
+    is shorter than what renders: over HUGSIM's 110 assets the opaque Gaussians reach 0.11-0.13 m
+    higher and 0.33-0.48 m longer than it (a car drawn from the box shows its roof above it), while the
+    asset's bottom sits on the box's origin and its centre on the box's to within 3 cm. The export sizes
+    its cuboids from the Gaussians instead; HUGSIM's own box, which its collisions use, is unchanged.
+
+    Args:
+        xyz: ``(N, 3)`` Gaussian centres in the asset frame (x along its length, y down, z across).
+        opacity: ``(N,)`` activated opacities.
+        min_opacity: Gaussians fainter than this are not part of the body.
+        quantile: percent trimmed off each end of each axis, against floaters.
+        ground_band_m: Gaussians this close to the ground (flat shadow splats around the tyres) are
+            left out of the length and width.
+        min_points: below this many body Gaussians the asset keeps its ``wlh.json``.
+    """
+    xyz = np.asarray(xyz, dtype=np.float64)
+    body = xyz[np.asarray(opacity).reshape(-1) > min_opacity]
+    if body.shape[0] < min_points:
+        return None
+    height = -float(np.percentile(body[:, 1], quantile))
+    above = body[body[:, 1] < -ground_band_m]
+    if above.shape[0] < min_points:
+        return None
+    lo, hi = np.percentile(above[:, [0, 2]], [quantile, 100.0 - quantile], axis=0)
+    length, width = float(hi[0] - lo[0]), float(hi[1] - lo[1])
+    return [width, length, height]
+
+
 def boxes_to_cuboids(
     obj_boxes,
     ego_box,
