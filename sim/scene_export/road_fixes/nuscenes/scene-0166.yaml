@@ -1,0 +1,3 @@
+note: 'north kerb a sawtooth around the parked cars'
+fill:
+  - [[0, 3], [96, 3], [96, 15], [0, 15]]
