@@ -1,0 +1,3 @@
+note: 'cross street at the start (x -13..0) closed off by the export; the Gaussians hold it'
+fill:
+  - [[-17, -30], [1, -30], [1, 30], [-17, 30]]

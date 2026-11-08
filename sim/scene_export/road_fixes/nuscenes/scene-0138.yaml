@@ -1,0 +1,3 @@
+note: 'south side streets reduced to spikes'
+fill:
+  - [[30, -22], [95, -22], [95, -3], [30, -3]]

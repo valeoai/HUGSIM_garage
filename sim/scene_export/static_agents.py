@@ -54,6 +54,13 @@ MAX_CLUSTER_POINTS = 60_000
 # dropped rather than exported as an obstacle that is not there.
 MIN_LENGTH_M, MAX_LENGTH_M = 1.8, 14.0
 MIN_WIDTH_M, MAX_WIDTH_M = 1.0, 3.6
+# How long a blob may be before it is split. Not MAX_LENGTH_M: a row of parked cars or a line
+# of truck trailers clusters as one blob 15-27 m long (nuScenes 0071, 0528, 0661, several
+# pandaset and waymo scenes), and dropping it at 14 m took the whole row out of the export
+# while bg_collision_det still ends an episode on it. _split_cluster cuts any length into
+# vehicle pieces, which the per-piece bounds below then check; past this length a blob is more
+# likely a mislabelled wall than vehicles.
+MAX_BLOB_LENGTH_M = 40.0
 
 # Bounds applied to the blob before it is split, rather than to a vehicle. A row of
 # bay-parked cars is a car length across, so the blob's minor extent may legitimately reach
@@ -104,6 +111,7 @@ def tunables():
         "width_m": (MIN_WIDTH_M, MAX_WIDTH_M),
         "height_m": (MIN_HEIGHT_M, MAX_HEIGHT_M),
         "max_blob_width_m": MAX_BLOB_WIDTH_M,
+        "max_blob_length_m": MAX_BLOB_LENGTH_M,
         "max_piece_length_m": MAX_PIECE_LENGTH_M,
         "split_length_m": SPLIT_LENGTH_M,
         "nominal_length_m": NOMINAL_VEHICLE_LENGTH_M,
@@ -292,7 +300,7 @@ def extract_static_vehicles(
         # Blob-level extent bounds are deliberately loose: a row of bay-parked cars is a car
         # *length* across and several cars along, so neither extent is a vehicle dimension
         # until the split has run. The per-vehicle bounds are applied to the pieces below.
-        if not (MIN_LENGTH_M <= length <= MAX_LENGTH_M):
+        if not (MIN_LENGTH_M <= length <= MAX_BLOB_LENGTH_M):
             continue
         if not (MIN_WIDTH_M <= width <= MAX_BLOB_WIDTH_M):
             continue

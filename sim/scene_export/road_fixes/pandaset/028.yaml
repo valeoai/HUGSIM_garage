@@ -1,0 +1,3 @@
+note: 'junction behind the start (x -30..-5) closed off'
+fill:
+  - [[-30, -12], [0, -12], [0, 16], [-30, 16]]
