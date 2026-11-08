@@ -33,7 +33,9 @@ import numpy as np
 #   4: (tried) parked cars carved out of the drivable area; no measurable effect, removed
 #   5: back to the version-3 algorithm, with the HD-map export off by default (the fingerprint's
 #      load_hd_map flag now records which source actually ran)
-SCHEMA_VERSION = 5
+#   6: the obstacle carve runs after the hand road fixes. No constant changed, so without this bump
+#      the eight hand-fixed scenes kept serving maps built in the old order
+SCHEMA_VERSION = 6
 
 SIDECAR_NAME = "pictura_sidecar.npz"
 FALLBACK_DIR = os.environ.get(
