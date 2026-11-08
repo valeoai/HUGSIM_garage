@@ -25,8 +25,8 @@ orig = hs.build_map_source
 seen = {}
 
 
-def spy(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None, nonroad_ab=None, road_fix=None):
-    src = orig(cfg, unified_map, cam_poses, ground_xyz=ground_xyz, road_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix)
+def spy(cfg, unified_map, cam_poses, ground_xyz=None, road_ab=None, nonroad_ab=None, road_fix=None, **kw):
+    src = orig(cfg, unified_map, cam_poses, ground_xyz=ground_xyz, road_ab=road_ab, nonroad_ab=nonroad_ab, road_fix=road_fix, **kw)
     mp = os.path.normpath(cfg.model_path)
     seen.update(name=f"{os.path.basename(os.path.dirname(mp))}_{os.path.basename(mp)}", cam_poses=np.asarray(cam_poses),
                 road_ab=np.zeros((0, 2)) if road_ab is None else np.asarray(road_ab),

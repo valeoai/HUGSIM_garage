@@ -59,6 +59,52 @@ def test_fill_takes_the_side_street_shape_from_the_gaussians():
     assert not at(25.0, 29.0)  # nothing past the Gaussians
 
 
+def test_obstacles_at_car_height_are_carved_out_and_specks_are_not():
+    track, ground = _straight_road()
+    rng = np.random.default_rng(2)
+    island = np.stack([rng.uniform(-1.0, 1.0, 120), rng.uniform(28.0, 32.0, 120)], 1)  # 2 x 4 m, 15 per m2: as sparse as a hedge
+    speck = np.array([[-2.0, 45.0]] * 6)                                                # one cell: a floater
+    src = GroundTrajectoryMapSource(track, ground_ab=ground, obstacle_ab=np.vstack([island, speck]))
+    mask, lo = src._drivable_mask()
+    at = lambda a, b: mask[int((a - lo[0]) // src.cell_m), int((b - lo[1]) // src.cell_m)]
+    assert not at(0.0, 30.0) and at(3.0, 30.0)
+    assert at(-2.0, 45.0)
+    roads = src.build(lambda a, b: np.zeros_like(np.asarray(a, dtype=float)))
+    edges = roads[roads[:, 6] == 2]
+    mids = (edges[:, 0:2] + edges[:, 3:5]) / 2  # sim (x, y) = (b, -a)
+    assert ((np.abs(mids[:, 0] - 30.0) < 3.0) & (np.abs(mids[:, 1]) < 2.0)).sum() >= 3  # the island has its own outline
+
+
+def test_a_cyclist_sized_obstacle_mid_road_gets_its_own_outline():
+    track, ground = _straight_road()
+    rng = np.random.default_rng(3)
+    cyclist = np.stack([rng.uniform(-0.6, 0.6, 60), rng.uniform(39.4, 40.6, 60)], 1)  # 1.2 x 1.2 m, ~40 per m2
+    src = GroundTrajectoryMapSource(track, ground_ab=ground, obstacle_ab=cyclist)
+    roads = src.build(lambda a, b: np.zeros_like(np.asarray(a, dtype=float)))
+    edges = roads[roads[:, 6] == 2]
+    mids = (edges[:, 0:2] + edges[:, 3:5]) / 2
+    assert ((np.abs(mids[:, 0] - 40.0) < 1.5) & (np.abs(mids[:, 1]) < 1.5)).sum() >= 3
+
+
+def test_an_obstacle_inside_a_fix_add_box_is_still_carved():
+    track, ground = _straight_road()
+    rng = np.random.default_rng(4)
+    bins = np.stack([rng.uniform(-6.0, -5.0, 200), rng.uniform(20.0, 22.0, 200)], 1)  # sim y 5..6, on a widened kerb
+    fix = {"note": "", "add": [np.array([[15.0, 3.0], [30.0, 3.0], [30.0, 8.0], [15.0, 8.0]])], "remove": []}
+    src = GroundTrajectoryMapSource(track, ground_ab=ground, road_fix=fix, obstacle_ab=bins)
+    mask, lo = src._drivable_mask()
+    at = lambda a, b: mask[int((a - lo[0]) // src.cell_m), int((b - lo[1]) // src.cell_m)]
+    assert at(-7.0, 25.0) and not at(-5.5, 21.0)
+
+
+def test_obstacle_points_keep_car_height_and_drop_vehicles():
+    from sim.scene_export.map_source import obstacle_points
+    xyz = np.array([[0.0, -0.5, 1.0], [0.0, -3.0, 2.0], [0.0, -0.5, 3.0], [0.0, -0.5, 4.0]])  # world, y down
+    sem = np.array([4, 8, 13, 0]); op = np.array([0.9, 0.9, 0.9, 0.9])
+    ab = obstacle_points(xyz, sem, op, lambda a, b: np.zeros_like(np.asarray(a, dtype=float)))
+    assert ab.shape == (1, 2) and np.allclose(ab[0], [0.0, 1.0])  # the fence at 0.5 m; not the 3 m canopy, the car, the road
+
+
 def test_no_fix_file_is_none_and_digest_is_empty(tmp_path):
     assert road_fixes.load(tmp_path / "nowhere" / "000") is None
     assert road_fixes.digest(None) == ""
@@ -76,6 +122,10 @@ if __name__ == "__main__":
     test_add_and_remove_change_the_drivable_area_where_asked()
     test_an_added_region_across_a_median_is_kept()
     test_fill_takes_the_side_street_shape_from_the_gaussians()
+    test_obstacles_at_car_height_are_carved_out_and_specks_are_not()
+    test_a_cyclist_sized_obstacle_mid_road_gets_its_own_outline()
+    test_an_obstacle_inside_a_fix_add_box_is_still_carved()
+    test_obstacle_points_keep_car_height_and_drop_vehicles()
     test_no_fix_file_is_none_and_digest_is_empty(pathlib.Path(tempfile.mkdtemp()))
     test_digest_follows_the_polygons()
-    print("5 passed")
+    print("9 passed")
