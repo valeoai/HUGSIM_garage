@@ -23,7 +23,7 @@ Everything is expressed in the frame ``ego_box`` / ``obj_boxes`` already use (x 
 y left, z up, yaw counter-clockwise), a common world convention.
 """
 
-from sim.scene_export.entities import boxes_to_cuboids, rig_pitch_from_track, roads_to_ego, route_to_ego
+from sim.scene_export.entities import asset_extent_wlh, boxes_to_cuboids, rig_pitch_from_track, roads_to_ego, route_to_ego
 from sim.scene_export import sidecar
 from sim.scene_export.static_agents import VEHICLE_CLASSES, extract_static_vehicles
 from sim.scene_export.map_source import (
@@ -49,6 +49,7 @@ __all__ = [
     "boxes_to_cuboids",
     "build_map_source",
     "rig_pitch_from_track",
+    "asset_extent_wlh",
     "sidecar",
     "extract_static_vehicles",
     "roads_to_ego",

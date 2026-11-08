@@ -15,6 +15,7 @@ from sim.scene_export import (
     build_map_source,
     extract_static_vehicles,
     rig_pitch_from_track,
+    asset_extent_wlh,
     roads_to_ego,
     route_to_ego,
     sidecar,
@@ -156,6 +157,18 @@ class HUGSimEnv(gymnasium.Env):
             (model_params, iteration) = torch.load(self.planner.ckpts[plan_id], weights_only=False)
             model_params = list(model_params)
             dynamic_gaussians[plan_id].restore(model_params, None)
+
+        # The scene export sizes each scenario actor from its Gaussians rather than its wlh.json, which is
+        # shorter than what renders (asset_extent_wlh). Export only: objs_list, which the collisions and the
+        # episode record use, keeps wlh.json. scene_export_asset_extents: false restores the old export.
+        self.scene_export_wlhs = {}
+        if cfg.base.get('scene_export_asset_extents', True):
+            for plan_id, model in dynamic_gaussians.items():
+                wlh = asset_extent_wlh(
+                    model.get_xyz.detach().cpu().numpy(), model.get_opacity.detach().cpu().numpy()
+                )
+                if wlh is not None:
+                    self.scene_export_wlhs[plan_id] = wlh
             
         semantic_idx = torch.argmax(self.gaussians.get_full_3D_features, dim=-1, keepdim=True)
         ground_xyz = self.gaussians.get_full_xyz[(semantic_idx == 0)[:, 0]].detach().cpu().numpy()
@@ -489,6 +502,19 @@ class HUGSimEnv(gymnasium.Env):
             obj_boxes.append([obj_b2w[2, 3].item(), -obj_b2w[0, 3].item(), -obj_b2w[1, 3].item(), wlh[0], wlh[1], wlh[2], -yaw-0.5*np.pi])
         return obj_boxes
 
+    def _scene_export_objs(self):
+        """``objs_list`` with each scenario actor sized as its Gaussians render it (``scene_export_wlhs``).
+
+        For the scene export only: the boxes keep their pose, and an actor with no measured size keeps
+        its ``wlh.json``.
+        """
+        boxes = [list(box) for box in self.objs_list]
+        for box, obj_id in zip(boxes, self.render_kwargs['planning'][0].keys()):
+            wlh = self.scene_export_wlhs.get(obj_id)
+            if wlh is not None:
+                box[3:6] = list(wlh)
+        return boxes
+
     def _get_obs(self):
         if self.obs_mode != 'rgb':
             return {}
@@ -577,7 +603,7 @@ class HUGSimEnv(gymnasium.Env):
             # cull rather than each getting their own budget. Merged only here: objs_list
             # feeds fg_collision_det and the episode record, and the static vehicles are
             # already covered by bg_collision_det, so adding them there would double-count.
-            actors = list(self.objs_list)
+            actors = self._scene_export_objs()
             # Speeds of the scenario's actors, from their motion since the last step (the planner
             # does not expose them), for the agent, in both abstract modes.
             # Actors are listed in a stable order, so rows match while the count does; a step
