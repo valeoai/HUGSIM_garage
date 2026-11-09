@@ -21,6 +21,8 @@ from omegaconf import OmegaConf
 from sim.utils.score_calculator import EGO_VERTS_BEFORE_FIXES, hugsim_evaluate
 from sim.utils.realized_score import read_crash_marker, score_episode
 from sim.utils.score_corridor import crop_episode
+from sim.utils.unfixed_step import RECORD_KEY as UNFIXED_STEP_KEY, UPSTREAM_MAX_STEPS, is_unfixed_step
+from sim.utils.unfixed_step import warning as unfixed_step_warning
 import numpy as np
 
 # Time spacing of the waypoints the AD side returns. The tracker needs it to place the plan on a
@@ -29,8 +31,7 @@ PLAN_TIMESTEP = 0.5
 #: Longest episode, in simulated seconds. 400 steps at the shipped dt = 0.25 s.
 EPISODE_SECONDS = 100.0
 # --as_drivor_paper (and --as_upstream): upstream HUGSIM's cap, a step count (its gymnasium registration's
-# TimeLimit): 100 s at the shipped dt 0.25 s, 40 s at dt 0.1.
-UPSTREAM_MAX_STEPS = 400
+# TimeLimit), UPSTREAM_MAX_STEPS from sim/utils/unfixed_step.py: 100 s at the shipped dt 0.25 s, 40 s at dt 0.1.
 #: Frame rate of a sparse video, in simulated time. The abstract modes render no camera to drive
 #: from, so each video frame is a Gaussian render made for the video alone.
 SPARSE_VIDEO_HZ = 2.0
@@ -374,6 +375,9 @@ def create_gym_env(cfg, output, agent, skip_native_eval=False, video='full', rea
             result["as_drivor_paper"] = True  # eval.json is then the DrivoR paper's HUGSIM score (episodes run as --before_fixes say "before_fixes")
         if as_upstream:
             result["as_upstream"] = True  # driven as upstream HUGSIM main drives (closed_loop.py --as_upstream)
+        if is_unfixed_step(cfg.kinematic.dt, as_drivor_paper, as_upstream):
+            # The step-count bugs were live (sim/utils/unfixed_step.py): aggregate_benchmark.py warns on it.
+            result[UNFIXED_STEP_KEY] = float(cfg.kinematic.dt)
         with open(os.path.join(output, 'realized_score.json'), 'w') as f:
             json.dump(result, f)
 
@@ -547,6 +551,9 @@ if __name__ == "__main__":
         {"camera": camera_config},
         {"kinematic": kinematic_config}
     )
+    unfixed = unfixed_step_warning(cfg.kinematic.dt, args.as_drivor_paper, args.as_upstream)
+    if unfixed:
+        print(unfixed, file=sys.stderr, flush=True)  # also lands in run.log under run_benchmark.py
     ad_key = 'dynamo_path' if args.ad.startswith('dynamo') else f'{args.ad}_path'
     needed = ['realcar_path', 'model_base']
     if args.output_dir is None:

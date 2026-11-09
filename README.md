@@ -255,6 +255,15 @@ scene export, which only hand the agent information. `realized_score.json` recor
 (and `"as_upstream": true`; episodes run as `--before_fixes` say `"before_fixes": true`); keep these episodes in an output folder of their own. Validated against
 upstream checkouts: LTF on official436 reproduces their scores.
 
+**High-risk combination: `--as_drivor_paper` or `--as_upstream` at a step other than 0.25 s** (e.g.
+`--kinematic_path configs/sim/kinematic_10hz.yaml`). The two step-count bugs above are then live: at dt 0.1
+episodes stop after 40 s, so long routes can never be completed, and the aggressive vehicles move 2.5x too
+far. LTF scores 0.249 on the driven path there, against 0.306 at 0.25 s and 0.360 with the fixes at 0.1 s:
+the run measures the bugs as much as the agent and is comparable with nothing but results published on that
+simulator. `closed_loop.py` prints a warning at start, `run_benchmark.py` prints it once before launching,
+`realized_score.json` records the step as `"unfixed_step_dt"`, and `aggregate_benchmark.py` warns about
+every agent with such episodes (`sim/utils/unfixed_step.py`).
+
 `hdscore` always means HUGSIM's own score. The realized score is the protocol to match to be
 comparable with TerraTransfer, and with any agent that, like its jerk policy, has no
 multi-second plan to score. It reads only what an episode already saves, so every past run can
